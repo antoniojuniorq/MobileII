@@ -1,0 +1,19 @@
+# Dart / Flutter
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+pubspec_overrides.yaml
+**/android/local.properties
+**/android/.gradle/
+**/ios/Pods/
+# Python (MockServer)
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+# IDEs / SO
+.idea/
+*.iml
+.DS_Store

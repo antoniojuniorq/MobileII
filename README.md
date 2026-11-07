@@ -1,58 +1,66 @@
-# ACE CONTROL — Design System (Flutter)
+# ACE CONTROL — ecossistema mobile (Flutter)
 
-Primeira etapa do ecossistema mobile do ACE CONTROL: tokens de design, tema
-claro/escuro e biblioteca de componentes para os apps de **agente** e **supervisor**.
+Monorepo com a estrutura do workspace (`ace_control.code-workspace`):
 
-## Rodando
+```
+apps/mobile/            App Flutter (cenas Login e Home)
+packages/core/          ace_core: HTTP, sessão (auth code), modelos e repositórios
+packages/design_system/ ace_design_system: tokens, tema e componentes
+  └─ example/           Sample app do Design System (galeria viva)
+server/                 MockServer (FastAPI) com a API simulada
+docs/                   API.md (requests/responses) e TELAS.md (tema e protótipo)
+scripts/                setup.ps1 e run_server.ps1 (Windows)
+```
 
-O repositório traz só `lib/`, `test/` e `pubspec.yaml`. Gere as pastas de plataforma uma vez:
+## Padrão de projeto (cenas)
 
-```bash
-flutter create . --platforms=android,ios
-flutter pub get
-flutter analyze
-flutter test
+Cada tela é uma **cena** em `apps/mobile/lib/scenes/<nome>/`:
+
+```
+login/
+  login_scene.dart        # UI (só desenha e repassa ações)
+  login_view_model.dart   # estado + lógica; fala com o Core
+home/
+  home_scene.dart
+  home_view_model.dart
+  widgets/                # partes da cena
+```
+
+- ViewModels estendem `SceneViewModel` (ChangeNotifier seguro após `dispose`).
+- A cena escuta o ViewModel com `ListenableBuilder`; navegação em `lib/navigation.dart`.
+- Cenas só usam componentes do **Design System** e dados do **Core** — nunca `http` direto.
+- Fluxo de sessão: sem auth code → Login; Login ok → guarda auth code → Home; abrir o app com
+  auth code → Home direto; `401 unauthorized` → limpa o storage e volta ao Login.
+
+## Como rodar (Windows)
+
+Pré-requisitos: Flutter, Python 3.11+ e Git.
+
+```powershell
+# 1) uma vez: gera android/ios e baixa dependências
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+
+# 2) terminal 1: MockServer
+powershell -ExecutionPolicy Bypass -File scripts\run_server.ps1
+
+# 3) terminal 2: app (emulador Android)
+cd apps\mobile
 flutter run
 ```
 
-## Estrutura
+Login de teste: matrícula `123456`, senha `ace123`.
 
+- **Celular físico:** `flutter run --dart-define=API_BASE_URL=http://IP_DO_PC:8000` (mesma rede Wi-Fi).
+- **Sample app do Design System:** `cd packages\design_system\example; flutter run`.
+
+## Testes
+
+```powershell
+cd server;                       python -m pytest -q
+cd packages\design_system;       flutter test
+cd packages\design_system\example; flutter test
+cd packages\core;                flutter test
+cd apps\mobile;                  flutter test
 ```
-lib/
-  design_system/
-    design_system.dart      # único import usado pelas telas
-    tokens/                 # cores, tipografia, espaçamento/raios/movimento, status
-    theme/ace_theme.dart    # ThemeData claro/escuro + extensão AceSemantic (context.ace)
-    components/             # AceButton, AceCard, AceTextField, AceStatusBadge, ...
-  showcase/                 # galeria viva (telas de demonstração)
-  main.dart
-test/design_system_test.dart
-```
 
-## Princípios
-
-1. **Campo primeiro**: alvos de toque de 52 dp, texto ≥ 12 sp, bordas em vez de sombras (sol forte).
-2. **Cor nunca sozinha**: todo status tem cor + ícone + texto.
-3. **Contraste AA**: testado automaticamente (4.5:1) nos dois temas.
-4. **Tokens → tema → componentes**: telas não usam cores ou números soltos.
-5. **Marca white-label**: trocar a identidade de um município = editar `ace_colors.dart`.
-
-## Tokens
-
-| Grupo | Arquivo | Conteúdo |
-|---|---|---|
-| Cor | `ace_colors.dart` | Verde Cerrado, Âmbar Sol, neutros claro/escuro, feedback |
-| Tipografia | `ace_typography.dart` | Sora (títulos) + Public Sans (texto), 12 estilos |
-| Espaço | `ace_spacing.dart` | Grade de 4 dp (x1–x8), `touch`, `page`, raios, movimento |
-| Status | `ace_status.dart` | Pendente, Visitado, Fechado, Recusado, Recuperado, Com foco |
-
-## Componentes
-
-`AceButton` (4 variantes, loading) · `AceCard` · `AceTextField` · `AceStatusBadge` ·
-`AceStatusSelector` · `AceStatCard` · `AceVisitTile` · `AceSectionHeader` ·
-`AceEmptyState` · `AceSnackbar`
-
-## Próximas etapas sugeridas
-
-Telas do agente (roteiro, mapa de lotes, registro de visita), telas do supervisor
-(painel por área) e integração com a API FastAPI.
+O CI (`.github/workflows/ci.yml`) roda tudo isso a cada push.
