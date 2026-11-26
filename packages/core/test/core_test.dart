@@ -180,4 +180,95 @@ void main() {
       expect(v.status, VisitStatus.comFoco);
     });
   });
+
+  group('Perfis e quadras', () {
+    test('login como supervisor guarda o perfil', () async {
+      Map<String, dynamic>? sent;
+      final storage = InMemoryAuthStorage();
+      final core = AceCore.create(
+        baseUrl: 'http://x',
+        storage: storage,
+        httpClient: MockClient((req) async {
+          sent = jsonDecode(req.body) as Map<String, dynamic>;
+          return jsonResponse({
+            ...loginBody,
+            'agent': {...(loginBody['agent'] as Map), 'perfil': 'supervisor'},
+          });
+        }),
+      );
+      final user = await core.auth
+          .login(matricula: '654321', senha: 's', perfil: Perfil.supervisor);
+      expect(sent!['perfil'], 'supervisor');
+      expect(user.perfil, Perfil.supervisor);
+      expect(await core.auth.perfil(), Perfil.supervisor);
+    });
+
+    test('logout mantém a quadra escolhida', () async {
+      final storage = InMemoryAuthStorage('abc', 'agente', '1106');
+      await storage.clear();
+      expect(await storage.readPerfil(), isNull);
+      expect(await storage.readQuadra(), '1106');
+    });
+
+    test('Quadra soma achados e acha o conjunto do lote', () {
+      final q = Quadra.fromJson({
+        'id': '1106', 'nome': 'Quadra 1106 Sul', 'bairro': 'ARSE 112',
+        'total_lotes': 2, 'visitados': 1, 'sem_acesso': 1, 'pendentes': 0,
+        'largura': 10, 'altura': 10, 'areas': [],
+        'conjuntos': [
+          {
+            'id': 'c1', 'nome': 'Alameda 1', 'x': 0, 'y': 0, 'w': 2, 'h': 2,
+            'lotes': [
+              {
+                'id': 'AL01-L01', 'numero': 1, 'x': 0, 'y': 0, 'w': 1, 'd': 2,
+                'status': 'visitado',
+                'visita': {
+                  'resultado': 'visitado', 'horario': '08:00', 'agente': 'A',
+                  'criadouros': 2, 'larvas': 10, 'animais': 1, 'focos': 1,
+                },
+              },
+              {
+                'id': 'AL01-L02', 'numero': 2, 'x': 1, 'y': 0, 'w': 1, 'd': 2,
+                'status': 'sem_acesso', 'visita': null,
+              },
+            ],
+          },
+        ],
+      });
+      expect(q.achados.larvas, 10);
+      expect(q.resumo.progresso, 1.0);
+      expect(q.lotes.last.status, LoteStatus.semAcesso);
+      expect(q.conjuntoDo(q.lotes.first).nome, 'Alameda 1');
+    });
+
+    test('registrarVisita só envia números quando visitado', () async {
+      final bodies = <Map<String, dynamic>>[];
+      final core = AceCore.create(
+        baseUrl: 'http://x',
+        storage: InMemoryAuthStorage('t'),
+        httpClient: MockClient((req) async {
+          bodies.add(jsonDecode(req.body) as Map<String, dynamic>);
+          return jsonResponse({
+            'id': 'AL01-L01', 'numero': 1, 'x': 0, 'y': 0, 'w': 1, 'd': 2,
+            'status': 'visitado', 'visita': null,
+          });
+        }),
+      );
+      await core.quadras.registrarVisita(
+        quadraId: '1106',
+        loteId: 'AL01-L01',
+        resultado: ResultadoVisita.visitado,
+        achados: const Achados(criadouros: 1, larvas: 4),
+      );
+      await core.quadras.registrarVisita(
+        quadraId: '1106',
+        loteId: 'AL01-L02',
+        resultado: ResultadoVisita.recusado,
+        achados: const Achados(criadouros: 9),
+      );
+      expect(bodies.first,
+          {'resultado': 'visitado', 'criadouros': 1, 'larvas': 4, 'animais': 0, 'focos': 0});
+      expect(bodies.last, {'resultado': 'recusado'});
+    });
+  });
 }

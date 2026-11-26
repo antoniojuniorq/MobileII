@@ -22,15 +22,30 @@ Status de visita: **Pendente · Visitado · Fechado · Recusado · Recuperado ·
 ## Mapa de telas
 
 ```
-Splash/Gate ──(sem auth code)──▶ Login ──(sucesso)──▶ Home
-     └────────(com auth code)───────────────────────▶ Home
-Home (abas):  Início · Mapa* · Visitas · Perfil
-Início ──toque na visita──▶ Folha "Registrar visita"
-Perfil ──Sair──▶ Login
-(*) Mapa: protótipo (placeholder "em desenvolvimento")
+Splash/Gate ──(sem sessão)──▶ Login ─┬─(agente)──────▶ Escolha da quadra ──▶ Home do agente
+     │                               └─(supervisor)──▶ Painel do supervisor
+     └──(com sessão)──▶ agente com quadra salva → Home · sem quadra → Escolha · supervisor → Painel
+Home do agente (abas):  Início · Mapa 3D · Visitas · Perfil (trocar quadra, sair)
+Mapa 3D ──toque no conjunto──▶ aproxima ──toque na casa──▶ Folha "Lote N"
+Folha "Lote N": Visitado (criadouros, larvas, animais, locais com focos) | Recusado / não atendido
+Painel do supervisor (abas): Painel · Mapa 3D (só leitura) · Perfil
 ```
 
-Implementado: Gate, Login, Home (Início, Visitas, Perfil, folha de registro). Protótipo: Mapa.
+### Mapa 3D da quadra (`AceIsoMap`)
+
+Cada lote vira uma casa com telhado de duas águas, numa vista inclinada com o norte para cima,
+como a planta da Prefeitura. **Vermelho** = a visitar, **verde** = visitado, **cinza** = recusa
+ou ninguém em casa; a legenda repete cor + ícone + quantidade. Pinça e arrasto aproximam; os
+atalhos "Al. 1, Al. 3…" levam direto ao conjunto. Com o mapa afastado o toque aproxima o
+conjunto; aproximado, o toque abre o lote (alvo grande o bastante para o dedo).
+
+### Login
+
+Duas entradas lado a lado (`AceChoiceCard`): **Agente de campo** (registrar visitas) e
+**Supervisor** (acompanhar a quadra). O botão diz para onde vai: "Entrar como agente".
+Correção do teclado: o campo de senha usa teclado de texto para senha, sem sugestões nem
+correção, com botão de mostrar a senha; o "próximo" da matrícula reabre o teclado já no modo
+texto (antes, em vários Android, o teclado numérico da matrícula continuava na senha).
 
 ## Wireframes
 

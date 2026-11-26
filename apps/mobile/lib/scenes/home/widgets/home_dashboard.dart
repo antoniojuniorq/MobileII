@@ -2,21 +2,26 @@ import 'package:ace_core/ace_core.dart';
 import 'package:ace_design_system/ace_design_system.dart';
 import 'package:flutter/material.dart';
 
+import '../../shared/lot_presenters.dart';
+import '../../shared/quadra_widgets.dart';
 import '../home_view_model.dart';
-import '../visit_presenters.dart';
 
-/// Aba "Início": saudação, meta do dia, números e roteiro.
+/// Aba "Início": saudação, progresso da quadra, achados e últimas visitas.
 class HomeDashboard extends StatelessWidget {
   const HomeDashboard({
     super.key,
     required this.vm,
-    required this.onOpenVisit,
+    required this.onOpenLote,
+    required this.onOpenMap,
     required this.onSeeAll,
+    required this.onChangeQuadra,
   });
 
   final HomeViewModel vm;
-  final ValueChanged<Visit> onOpenVisit;
+  final ValueChanged<Lote> onOpenLote;
+  final VoidCallback onOpenMap;
   final VoidCallback onSeeAll;
+  final VoidCallback onChangeQuadra;
 
   String _greeting() {
     final hour = DateTime.now().hour;
@@ -27,48 +32,20 @@ class HomeDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    switch (vm.status) {
-      case HomeStatus.loading:
-      case HomeStatus.unauthorized:
-        return const Center(child: CircularProgressIndicator());
-      case HomeStatus.failure:
-        return Center(
-          child: SingleChildScrollView(
-            child: AceEmptyState(
-              icon: Icons.cloud_off_outlined,
-              title: 'Não foi possível carregar',
-              message: vm.errorMessage ?? 'Tente novamente em instantes.',
-              actionLabel: 'Tentar de novo',
-              onAction: () => vm.load(),
-            ),
-          ),
-        );
-      case HomeStatus.ready:
-        break;
-    }
-
     final agent = vm.agent!;
-    final summary = vm.summary!;
-    final visits = vm.pendingFirst.take(5).toList();
+    final q = vm.quadra!;
+    final recentes = lotesTrabalhados(q).take(4).toList();
 
     return RefreshIndicator(
       onRefresh: () => vm.load(silent: true),
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(
-          AceSpacing.page,
-          AceSpacing.x5,
-          AceSpacing.page,
-          AceSpacing.x6,
-        ),
+        padding: const EdgeInsets.fromLTRB(AceSpacing.page, AceSpacing.x5, AceSpacing.page, AceSpacing.x6),
         children: [
-          Text(
-            '${_greeting()}, ${agent.primeiroNome}',
-            style: context.text.headlineSmall,
-          ),
+          Text('${_greeting()}, ${agent.primeiroNome}', style: context.text.headlineSmall),
           const SizedBox(height: AceSpacing.x1),
           Text(
-            '${agent.area} · ${agent.municipio}',
+            '${q.resumo.pendentes} lotes esperam visita hoje.',
             style: context.text.bodyMedium?.copyWith(color: context.ace.textMuted),
           ),
           if (vm.refreshError != null) ...[
@@ -76,77 +53,27 @@ class HomeDashboard extends StatelessWidget {
             AceInlineMessage(message: vm.refreshError!),
           ],
           const SizedBox(height: AceSpacing.x5),
-          AceCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Meta do dia', style: context.text.titleMedium),
-                    Text(
-                      '${summary.visitsDone} de ${summary.goal} visitas',
-                      style: context.text.bodyMedium,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AceSpacing.x3),
-                AceProgressBar(value: summary.progress, semanticLabel: 'Meta do dia'),
-              ],
-            ),
-          ),
+          QuadraProgressCard(quadra: q, onChange: onChangeQuadra),
           const SizedBox(height: AceSpacing.x3),
-          Row(
-            children: [
-              Expanded(
-                child: AceStatCard(
-                  value: '${summary.visitsDone}',
-                  label: 'Feitas',
-                  icon: Icons.check_circle_outline,
-                ),
-              ),
-              const SizedBox(width: AceSpacing.x3),
-              Expanded(
-                child: AceStatCard(
-                  value: '${summary.visitsPending}',
-                  label: 'Pendentes',
-                  icon: Icons.schedule,
-                ),
-              ),
-              const SizedBox(width: AceSpacing.x3),
-              Expanded(
-                child: AceStatCard(
-                  value: '${summary.focosFound}',
-                  label: 'Focos',
-                  icon: Icons.bug_report_outlined,
-                ),
-              ),
-            ],
-          ),
-          AceSectionHeader(
-            title: 'Roteiro de hoje',
-            actionLabel: 'Ver tudo',
-            onAction: onSeeAll,
-          ),
-          if (visits.isEmpty)
+          AceButton(label: 'Abrir mapa 3D da quadra', icon: Icons.view_in_ar_outlined, onPressed: onOpenMap),
+          const SizedBox(height: AceSpacing.x5),
+          Text('Encontrado hoje', style: context.text.titleMedium),
+          const SizedBox(height: AceSpacing.x3),
+          AchadosRow(achados: q.achados),
+          AceSectionHeader(title: 'Últimas visitas', actionLabel: 'Ver todas', onAction: onSeeAll),
+          if (recentes.isEmpty)
             const AceCard(
               child: AceEmptyState(
                 icon: Icons.map_outlined,
-                title: 'Nenhuma visita hoje',
-                message: 'Quando houver um roteiro para você, ele aparece aqui.',
+                title: 'Nenhuma visita ainda',
+                message: 'Toque numa casa do mapa para registrar a primeira.',
               ),
             )
           else
-            for (final v in visits)
+            for (final l in recentes)
               Padding(
                 padding: const EdgeInsets.only(bottom: AceSpacing.x2),
-                child: AceVisitTile(
-                  lot: v.lote,
-                  address: v.endereco,
-                  detail: visitDetail(v),
-                  status: aceStatusOf(v.status),
-                  onTap: () => onOpenVisit(v),
-                ),
+                child: LoteTile(quadra: q, lote: l, onTap: () => onOpenLote(l)),
               ),
         ],
       ),

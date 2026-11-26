@@ -18,3 +18,7 @@ export 'src/components/ace_status_badge.dart';
 export 'src/components/ace_status_selector.dart';
 export 'src/components/ace_text_field.dart';
 export 'src/components/ace_visit_tile.dart';
+export 'src/components/ace_choice_card.dart';
+export 'src/components/ace_counter_field.dart';
+export 'src/components/ace_iso_map.dart';
+export 'src/components/ace_lot_legend.dart';

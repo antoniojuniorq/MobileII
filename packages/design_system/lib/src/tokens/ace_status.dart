@@ -54,3 +54,53 @@ extension AceStatusX on AceStatus {
     };
   }
 }
+
+/// Situação de um lote no mapa da quadra.
+///
+/// Vermelho = ainda não visitado, verde = visitado, cinza = recusa ou ninguém
+/// em casa. No mapa a cor vem sempre com a legenda (ícone + texto).
+enum AceLotStatus { pendente, visitado, semAcesso }
+
+extension AceLotStatusX on AceLotStatus {
+  String get label => switch (this) {
+        AceLotStatus.pendente => 'A visitar',
+        AceLotStatus.visitado => 'Visitado',
+        AceLotStatus.semAcesso => 'Recusa / sem morador',
+      };
+
+  /// "472 a visitar", "1 visitado", "2 recusa / ausente".
+  String countLabel(int n) => switch (this) {
+        AceLotStatus.pendente => '$n a visitar',
+        AceLotStatus.visitado => n == 1 ? '1 visitado' : '$n visitados',
+        AceLotStatus.semAcesso => '$n recusa / ausente',
+      };
+
+  IconData get icon => switch (this) {
+        AceLotStatus.pendente => Icons.radio_button_unchecked,
+        AceLotStatus.visitado => Icons.check_circle,
+        AceLotStatus.semAcesso => Icons.do_not_disturb_on,
+      };
+
+  /// Cor do telhado e das paredes (iguais nos dois temas: o mapa tem chão próprio).
+  Color get color => switch (this) {
+        AceLotStatus.pendente => const Color(0xFFD5432F),
+        AceLotStatus.visitado => const Color(0xFF239A5E),
+        AceLotStatus.semAcesso => const Color(0xFF8E989E),
+      };
+
+  /// Texto e fundo para selos fora do mapa (contraste AA).
+  AceStatusColors colors(Brightness b) {
+    final dark = b == Brightness.dark;
+    return switch (this) {
+      AceLotStatus.pendente => dark
+          ? const AceStatusColors(Color(0xFFF7A99C), Color(0xFF4A1A14))
+          : const AceStatusColors(Color(0xFF9E2A1B), Color(0xFFFBE3DE)),
+      AceLotStatus.visitado => dark
+          ? const AceStatusColors(Color(0xFF8FDDB5), Color(0xFF0F3A2A))
+          : const AceStatusColors(Color(0xFF14573F), Color(0xFFDDF1E7)),
+      AceLotStatus.semAcesso => dark
+          ? const AceStatusColors(Color(0xFFC5CDD2), Color(0xFF2E3539))
+          : const AceStatusColors(Color(0xFF454F55), Color(0xFFE6EAEC)),
+    };
+  }
+}

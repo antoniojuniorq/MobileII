@@ -4,37 +4,32 @@ import '../scene_view_model.dart';
 
 enum HomeStatus { loading, ready, failure, unauthorized }
 
+/// Dia do agente na quadra escolhida: planta, situação dos lotes e registro.
 class HomeViewModel extends SceneViewModel {
   HomeViewModel({
+    required this.quadraId,
     required AgentRepository agentRepository,
-    required VisitsRepository visitsRepository,
+    required QuadrasRepository quadrasRepository,
     required AuthRepository authRepository,
   })  : _agentRepo = agentRepository,
-        _visitsRepo = visitsRepository,
+        _quadras = quadrasRepository,
         _auth = authRepository;
 
+  final String quadraId;
   final AgentRepository _agentRepo;
-  final VisitsRepository _visitsRepo;
+  final QuadrasRepository _quadras;
   final AuthRepository _auth;
 
   HomeStatus status = HomeStatus.loading;
   Agent? agent;
-  Summary? summary;
-  List<Visit> visits = const [];
+  Quadra? quadra;
   String? errorMessage;
 
   /// Falha ao atualizar com dados já na tela (mantém o conteúdo visível).
   String? refreshError;
 
-  /// Pendentes primeiro, depois as já visitadas.
-  List<Visit> get pendingFirst {
-    final pending = visits.where((v) => v.status == VisitStatus.pendente);
-    final others = visits.where((v) => v.status != VisitStatus.pendente);
-    return [...pending, ...others];
-  }
-
   Future<void> load({bool silent = false}) async {
-    final hasData = agent != null && summary != null;
+    final hasData = agent != null && quadra != null;
     if (!(silent && hasData)) {
       status = HomeStatus.loading;
       errorMessage = null;
@@ -44,11 +39,9 @@ class HomeViewModel extends SceneViewModel {
 
     try {
       final me = await _agentRepo.me();
-      final todaySummary = await _visitsRepo.summaryToday();
-      final todayVisits = await _visitsRepo.list();
+      final q = await _quadras.get(quadraId);
       agent = me;
-      summary = todaySummary;
-      visits = todayVisits;
+      quadra = q;
       status = HomeStatus.ready;
     } on ApiException catch (e) {
       if (e.isUnauthorized) {
@@ -67,17 +60,14 @@ class HomeViewModel extends SceneViewModel {
     notifyListeners();
   }
 
-  /// Salva o resultado da visita. Retorna `null` se deu certo, ou a mensagem de erro.
-  Future<String?> saveVisit(
-    Visit visit,
-    VisitStatus newStatus,
-    String? observacao,
-  ) async {
+  /// Salva a visita do lote. Retorna `null` se deu certo, ou a mensagem de erro.
+  Future<String?> registrar(Lote lote, ResultadoVisita resultado, Achados achados) async {
     try {
-      await _visitsRepo.update(
-        visit.id,
-        status: newStatus,
-        observacao: observacao,
+      await _quadras.registrarVisita(
+        quadraId: quadraId,
+        loteId: lote.id,
+        resultado: resultado,
+        achados: achados,
       );
       await load(silent: true);
       return null;

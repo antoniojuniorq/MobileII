@@ -50,7 +50,7 @@ class AceButton extends StatelessWidget {
     );
 
     final tap = loading ? null : onPressed;
-    return switch (variant) {
+    final button = switch (variant) {
       AceButtonVariant.primary => FilledButton(onPressed: tap, child: content),
       AceButtonVariant.danger => FilledButton(
           onPressed: tap,
@@ -60,5 +60,39 @@ class AceButton extends StatelessWidget {
       AceButtonVariant.secondary => OutlinedButton(onPressed: tap, child: content),
       AceButtonVariant.ghost => TextButton(onPressed: tap, child: content),
     };
+    return _Pressable(enabled: tap != null, child: button);
+  }
+}
+
+/// Afunda 3% enquanto o dedo está no botão; volta ao soltar.
+class _Pressable extends StatefulWidget {
+  const _Pressable({required this.enabled, required this.child});
+  final bool enabled;
+  final Widget child;
+
+  @override
+  State<_Pressable> createState() => _PressableState();
+}
+
+class _PressableState extends State<_Pressable> {
+  bool _down = false;
+
+  void _set(bool v) {
+    if (widget.enabled && v != _down) setState(() => _down = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: (_) => _set(true),
+      onPointerUp: (_) => _set(false),
+      onPointerCancel: (_) => _set(false),
+      child: AnimatedScale(
+        scale: _down ? 0.97 : 1,
+        duration: AceMotion.fast,
+        curve: AceMotion.curve,
+        child: widget.child,
+      ),
+    );
   }
 }

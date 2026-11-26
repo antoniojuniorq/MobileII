@@ -163,6 +163,13 @@ abstract final class AceTheme {
         height: 68,
         labelTextStyle: WidgetStatePropertyAll(text.labelSmall),
       ),
+      chipTheme: ChipThemeData(
+        selectedColor: c.primaryContainer,
+        secondarySelectedColor: c.primaryContainer,
+        side: BorderSide(color: s.line),
+        labelStyle: text.labelLarge,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AceRadius.md)),
+      ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         shape: shape,

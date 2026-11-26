@@ -48,7 +48,8 @@ cd apps\mobile
 flutter run
 ```
 
-Login de teste: matrícula `123456`, senha `ace123`.
+Login de teste: **agente de campo** `123456` / `ace123` · **supervisor** `654321` / `sup123`
+(escolha a entrada na tela de login).
 
 - **Celular físico:** `flutter run --dart-define=API_BASE_URL=http://IP_DO_PC:8000` (mesma rede Wi-Fi).
 - **Sample app do Design System:** `cd packages\design_system\example; flutter run`.

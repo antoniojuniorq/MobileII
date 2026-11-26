@@ -1,22 +1,26 @@
+import 'package:ace_core/ace_core.dart';
 import 'package:ace_design_system/ace_design_system.dart';
 import 'package:flutter/material.dart';
 
-import '../home_view_model.dart';
-
-/// Aba "Perfil": dados do agente e saída da conta.
+/// Aba "Perfil": dados da pessoa, quadra de atuação e saída da conta.
 class ProfileTab extends StatelessWidget {
-  const ProfileTab({super.key, required this.vm, required this.onLogout});
+  const ProfileTab({
+    super.key,
+    required this.agent,
+    required this.onLogout,
+    this.quadraNome,
+    this.onChangeQuadra,
+  });
 
-  final HomeViewModel vm;
+  final Agent agent;
   final VoidCallback onLogout;
+  final String? quadraNome;
+  final VoidCallback? onChangeQuadra;
 
   @override
   Widget build(BuildContext context) {
-    final agent = vm.agent;
-    if (agent == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
     final muted = context.text.bodyMedium?.copyWith(color: context.ace.textMuted);
+    final supervisor = agent.perfil == Perfil.supervisor;
     return ListView(
       padding: const EdgeInsets.all(AceSpacing.page),
       children: [
@@ -27,18 +31,43 @@ class ProfileTab extends StatelessWidget {
               CircleAvatar(
                 radius: 28,
                 backgroundColor: context.colors.primaryContainer,
-                child: Icon(Icons.person_outline,
-                    size: 30, color: context.colors.onPrimaryContainer),
+                child: Icon(
+                  supervisor ? Icons.insights_outlined : Icons.directions_walk,
+                  size: 30,
+                  color: context.colors.onPrimaryContainer,
+                ),
               ),
               const SizedBox(height: AceSpacing.x3),
               Text(agent.nome, style: context.text.titleLarge),
               const SizedBox(height: AceSpacing.x1),
+              Text(supervisor ? 'Supervisor' : 'Agente de campo', style: muted),
               Text('Matrícula ${agent.matricula}', style: muted),
-              Text(agent.area, style: muted),
               Text(agent.municipio, style: muted),
             ],
           ),
         ),
+        if (quadraNome != null) ...[
+          const SizedBox(height: AceSpacing.x3),
+          AceCard(
+            onTap: onChangeQuadra,
+            child: Row(
+              children: [
+                Icon(Icons.grid_view_rounded, color: context.colors.primary),
+                const SizedBox(width: AceSpacing.x3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Quadra de atuação', style: muted),
+                      Text(quadraNome!, style: context.text.titleMedium),
+                    ],
+                  ),
+                ),
+                if (onChangeQuadra != null) const Icon(Icons.chevron_right),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: AceSpacing.x5),
         AceButton(
           label: 'Sair da conta',

@@ -10,6 +10,8 @@ export 'src/models/agent.dart';
 export 'src/models/login_response.dart';
 export 'src/models/summary.dart';
 export 'src/models/visit.dart';
+export 'src/models/quadra.dart';
 export 'src/repositories/agent_repository.dart';
 export 'src/repositories/auth_repository.dart';
 export 'src/repositories/visits_repository.dart';
+export 'src/repositories/quadras_repository.dart';

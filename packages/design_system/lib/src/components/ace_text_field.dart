@@ -3,7 +3,11 @@ import '../theme/ace_theme.dart';
 import '../tokens/ace_spacing.dart';
 
 /// Campo de texto com rótulo sempre visível acima (não some ao digitar).
-class AceTextField extends StatelessWidget {
+///
+/// Com [obscure] vira campo de senha: teclado de texto próprio para senha,
+/// sem sugestões nem correção (alguns teclados Android travam a digitação em
+/// campos ocultos com sugestões ligadas) e um botão para mostrar a senha.
+class AceTextField extends StatefulWidget {
   const AceTextField({
     super.key,
     required this.label,
@@ -19,6 +23,8 @@ class AceTextField extends StatelessWidget {
     this.enabled = true,
     this.textInputAction,
     this.onSubmitted,
+    this.focusNode,
+    this.autofillHints,
   });
 
   final String label;
@@ -34,29 +40,51 @@ class AceTextField extends StatelessWidget {
   final bool enabled;
   final TextInputAction? textInputAction;
   final ValueChanged<String>? onSubmitted;
+  final FocusNode? focusNode;
+  final Iterable<String>? autofillHints;
+
+  @override
+  State<AceTextField> createState() => _AceTextFieldState();
+}
+
+class _AceTextFieldState extends State<AceTextField> {
+  bool _hidden = true;
 
   @override
   Widget build(BuildContext context) {
+    final w = widget;
+    final secret = w.obscure;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: context.text.titleSmall),
+        Text(w.label, style: context.text.titleSmall),
         const SizedBox(height: AceSpacing.x2),
         TextField(
-          controller: controller,
-          obscureText: obscure,
-          keyboardType: keyboardType,
-          onChanged: onChanged,
-          maxLines: maxLines,
-          enabled: enabled,
-          textInputAction: textInputAction,
-          onSubmitted: onSubmitted,
+          controller: w.controller,
+          focusNode: w.focusNode,
+          obscureText: secret && _hidden,
+          keyboardType: secret ? TextInputType.visiblePassword : w.keyboardType,
+          autocorrect: !secret,
+          enableSuggestions: !secret,
+          autofillHints: w.autofillHints,
+          onChanged: w.onChanged,
+          maxLines: secret ? 1 : w.maxLines,
+          enabled: w.enabled,
+          textInputAction: w.textInputAction,
+          onSubmitted: w.onSubmitted,
           style: context.text.bodyLarge,
           decoration: InputDecoration(
-            hintText: hint,
-            helperText: helper,
-            errorText: error,
-            prefixIcon: icon == null ? null : Icon(icon),
+            hintText: w.hint,
+            helperText: w.helper,
+            errorText: w.error,
+            prefixIcon: w.icon == null ? null : Icon(w.icon),
+            suffixIcon: !secret
+                ? null
+                : IconButton(
+                    tooltip: _hidden ? 'Mostrar senha' : 'Esconder senha',
+                    icon: Icon(_hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                    onPressed: () => setState(() => _hidden = !_hidden),
+                  ),
           ),
         ),
       ],

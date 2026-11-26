@@ -83,4 +83,105 @@ void main() {
     );
     expect(bar.value, 1.0);
   });
+
+  group('Componentes do mapa e da visita', () {
+    test('selos de lote têm contraste AA nos dois temas', () {
+      for (final b in Brightness.values) {
+        for (final s in AceLotStatus.values) {
+          final c = s.colors(b);
+          expect(contrast(c.fg, c.bg), greaterThanOrEqualTo(4.5), reason: '${s.name} $b');
+        }
+      }
+    });
+
+    testWidgets('contador soma, subtrai e não fica negativo', (tester) async {
+      var value = 0;
+      await tester.pumpWidget(host(StatefulBuilder(
+        builder: (context, setState) => AceCounterField(
+          label: 'Larvas',
+          value: value,
+          onChanged: (v) => setState(() => value = v),
+        ),
+      )));
+      await tester.tap(find.byTooltip('Aumentar larvas'));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Aumentar larvas'));
+      await tester.pump();
+      expect(value, 2);
+      await tester.tap(find.byTooltip('Diminuir larvas'));
+      await tester.pump();
+      expect(value, 1);
+      await tester.enterText(find.byType(TextField), '30');
+      await tester.pump();
+      expect(value, 30);
+    });
+
+    testWidgets('cartão de escolha chama onTap e marca a seleção', (tester) async {
+      var tapped = false;
+      await tester.pumpWidget(host(AceChoiceCard(
+        icon: Icons.person,
+        title: 'Supervisor',
+        selected: true,
+        onTap: () => tapped = true,
+      )));
+      await tester.tap(find.text('Supervisor'));
+      expect(tapped, isTrue);
+      expect(find.byIcon(Icons.radio_button_checked), findsOneWidget);
+    });
+
+    testWidgets('campo de senha esconde o texto e mostra ao tocar no olho', (tester) async {
+      await tester.pumpWidget(host(const AceTextField(label: 'Senha', obscure: true)));
+      TextField field() => tester.widget<TextField>(find.byType(TextField));
+      expect(field().obscureText, isTrue);
+      expect(field().enableSuggestions, isFalse);
+      expect(field().autocorrect, isFalse);
+      expect(field().keyboardType, TextInputType.visiblePassword);
+      await tester.tap(find.byTooltip('Mostrar senha'));
+      await tester.pump();
+      expect(field().obscureText, isFalse);
+    });
+
+    testWidgets('mapa 3D: tocar numa casa aproximada devolve o lote', (tester) async {
+      AceIsoLot? tapped;
+      final ctrl = AceIsoMapController();
+      await tester.pumpWidget(MaterialApp(
+        theme: AceTheme.light,
+        home: Scaffold(
+          body: SizedBox(
+            width: 400,
+            height: 400,
+            child: AceIsoMap(
+              controller: ctrl,
+              worldWidth: 2,
+              worldHeight: 2,
+              groups: const [AceIsoGroup(id: 'g', label: 'Alameda 1', x: 0, y: 0, w: 2, h: 2)],
+              lots: const [
+                AceIsoLot(id: 'a', x: 0, y: 0, w: 1, d: 2, status: AceLotStatus.pendente, label: '1'),
+                AceIsoLot(id: 'b', x: 1, y: 0, w: 1, d: 2, status: AceLotStatus.visitado, label: '2'),
+              ],
+              onLotTap: (l) => tapped = l,
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      // mapa pequeno já está grande na tela: o toque vai direto para a casa
+      final box = tester.getRect(find.byType(GestureDetector).last);
+      await tester.tapAt(box.center + const Offset(40, 0));
+      await tester.pump();
+      expect(tapped?.id, 'b');
+      ctrl.dispose();
+    });
+
+    testWidgets('legenda mostra a quantidade de cada situação', (tester) async {
+      await tester.pumpWidget(host(const AceLotLegend(counts: {
+        AceLotStatus.pendente: 3,
+        AceLotStatus.visitado: 1,
+        AceLotStatus.semAcesso: 2,
+      })));
+      expect(find.text('3 a visitar'), findsOneWidget);
+      expect(find.text('1 visitado'), findsOneWidget);
+      expect(find.text('2 recusa / ausente'), findsOneWidget);
+    });
+  });
 }

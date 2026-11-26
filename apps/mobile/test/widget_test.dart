@@ -20,37 +20,80 @@ const _agent = {
   'matricula': '123456',
   'municipio': 'Palmas - TO',
   'area': 'Área 07',
+  'perfil': 'agente',
+};
+const _supervisor = {
+  'id': 2,
+  'nome': 'Marina Lopes',
+  'matricula': '654321',
+  'municipio': 'Palmas - TO',
+  'area': 'Supervisão',
+  'perfil': 'supervisor',
 };
 
-List<Map<String, dynamic>> _seed() => [
-      {'id': 1, 'lote': '07', 'endereco': 'Rua das Mangabas, 120', 'quadra': 'Quadra 12', 'horario': '08:40', 'status': 'visitado', 'observacao': null},
-      {'id': 6, 'lote': '12', 'endereco': 'Rua dos Buritis, 61', 'quadra': 'Quadra 14', 'horario': null, 'status': 'pendente', 'observacao': null},
-      {'id': 7, 'lote': '13', 'endereco': 'Rua dos Buritis, 77', 'quadra': 'Quadra 14', 'horario': null, 'status': 'pendente', 'observacao': null},
-    ];
+Map<String, dynamic> _lote(int n, String status, [Map<String, dynamic>? visita]) => {
+      'id': 'AL01-L${n.toString().padLeft(2, '0')}',
+      'numero': n,
+      'x': (n - 1) % 2,
+      'y': n <= 2 ? 0 : 2,
+      'w': 1,
+      'd': 2,
+      'status': status,
+      'visita': visita,
+    };
+
+Map<String, dynamic> _visita(String resultado, {int larvas = 0}) => {
+      'resultado': resultado,
+      'horario': '08:00',
+      'agente': 'Antonio Junior',
+      'criadouros': 0,
+      'larvas': larvas,
+      'animais': 0,
+      'focos': 0,
+    };
 
 /// Backend falso em memória (espelha o contrato do MockServer).
 class FakeBackend {
-  FakeBackend({this.loginOk = true, this.sessionValid = true});
+  FakeBackend({this.sessionValid = true});
 
-  final bool loginOk;
   final bool sessionValid;
-  final visits = _seed();
+  final lotes = [
+    _lote(1, 'visitado', _visita('visitado', larvas: 4)),
+    _lote(2, 'sem_acesso', _visita('recusado')),
+    _lote(3, 'pendente'),
+    _lote(4, 'pendente'),
+  ];
+  Map<String, dynamic>? lastVisitBody;
+  Map<String, dynamic>? user;
+
+  Map<String, dynamic> _resumo() => {
+        'id': '1106',
+        'nome': 'Quadra 1106 Sul',
+        'bairro': 'ARSE 112 · Palmas - TO',
+        'total_lotes': lotes.length,
+        'visitados': lotes.where((l) => l['status'] == 'visitado').length,
+        'sem_acesso': lotes.where((l) => l['status'] == 'sem_acesso').length,
+        'pendentes': lotes.where((l) => l['status'] == 'pendente').length,
+      };
 
   late final MockClient client = MockClient((req) async {
     final path = req.url.path;
     if (path == '/auth/login') {
-      return loginOk
-          ? _json({
-              'auth_code': 'abc123',
-              'expires_at': '2026-11-07T12:00:00Z',
-              'agent': _agent,
-            })
-          : _json({
-              'error': {
-                'code': 'invalid_credentials',
-                'message': 'Matrícula ou senha incorreta.',
-              },
-            }, 401);
+      final body = jsonDecode(req.body) as Map<String, dynamic>;
+      final users = {'123456': (_agent, 'ace123'), '654321': (_supervisor, 'sup123')};
+      final found = users[body['matricula']];
+      if (found == null || found.$2 != body['senha']) {
+        return _json({
+          'error': {'code': 'invalid_credentials', 'message': 'Matrícula ou senha incorreta.'},
+        }, 401);
+      }
+      if (found.$1['perfil'] != body['perfil']) {
+        return _json({
+          'error': {'code': 'wrong_profile', 'message': 'Esta matrícula não entra como supervisor.'},
+        }, 403);
+      }
+      user = found.$1;
+      return _json({'auth_code': 'abc123', 'expires_at': '2026-11-07T12:00:00Z', 'agent': found.$1});
     }
     if (path == '/auth/logout') return http.Response('', 204);
     if (!sessionValid) {
@@ -58,27 +101,28 @@ class FakeBackend {
         'error': {'code': 'unauthorized', 'message': 'Sessão expirada. Entre novamente.'},
       }, 401);
     }
-    if (path == '/me') return _json(_agent);
-    if (path == '/summary/today') {
-      final pending = visits.where((v) => v['status'] == 'pendente').length;
+    if (path == '/me') return _json(user ?? _agent);
+    if (path == '/quadras') return _json([_resumo()]);
+    if (path == '/quadras/1106') {
       return _json({
-        'date': '2026-11-07',
-        'goal': 10,
-        'visits_total': visits.length,
-        'visits_done': visits.length - pending,
-        'visits_pending': pending,
-        'focos_found': visits.where((v) => v['status'] == 'com_foco').length,
+        ..._resumo(),
+        'largura': 2,
+        'altura': 4,
+        'areas': [],
+        'conjuntos': [
+          {'id': 'AL01', 'nome': 'Alameda 1', 'x': 0, 'y': 0, 'w': 2, 'h': 4, 'lotes': lotes},
+        ],
       });
     }
-    if (path == '/visits' && req.method == 'GET') return _json(visits);
-    if (path.startsWith('/visits/') && req.method == 'PATCH') {
-      final id = int.parse(path.split('/').last);
+    if (path.endsWith('/visita') && req.method == 'POST') {
+      final id = path.split('/')[4];
       final body = jsonDecode(req.body) as Map<String, dynamic>;
-      final v = visits.firstWhere((e) => e['id'] == id);
-      v['status'] = body['status'];
-      v['observacao'] = body['observacao'];
-      v['horario'] ??= '10:00';
-      return _json(v);
+      lastVisitBody = body;
+      final l = lotes.firstWhere((e) => e['id'] == id);
+      final ok = body['resultado'] == 'visitado';
+      l['status'] = ok ? 'visitado' : 'sem_acesso';
+      l['visita'] = {..._visita(body['resultado'] as String), if (ok) ...body}..remove('id');
+      return _json(l);
     }
     return _json({'error': {'code': 'not_found', 'message': 'Não encontrado'}}, 404);
   });
@@ -103,97 +147,164 @@ Future<AceCore> _pumpApp(
   return core;
 }
 
-Future<void> _fillAndSubmitLogin(WidgetTester tester) async {
-  await tester.enterText(find.byType(TextField).at(0), '123456');
-  await tester.enterText(find.byType(TextField).at(1), 'ace123');
-  await tester.tap(find.widgetWithText(FilledButton, 'Entrar'));
+Future<void> _login(WidgetTester tester, String matricula, String senha, {bool supervisor = false}) async {
+  if (supervisor) {
+    await tester.tap(find.text('Supervisor'));
+    await tester.pump();
+  }
+  await tester.enterText(find.byType(TextField).at(0), matricula);
+  await tester.enterText(find.byType(TextField).at(1), senha);
+  await tester.tap(find.byType(FilledButton));
   await tester.pumpAndSettle();
 }
+
+InMemoryAuthStorage _agentSession() => InMemoryAuthStorage('abc123', 'agente', '1106');
 
 void main() {
   setUpAll(() => AceTypography.useGoogleFonts = false);
 
-  testWidgets('sem sessão mostra o Login', (tester) async {
+  testWidgets('sem sessão mostra o Login com as duas entradas', (tester) async {
     await _pumpApp(tester, backend: FakeBackend());
-    expect(find.text('ACE CONTROL'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Entrar'), findsOneWidget);
+    expect(find.text('Agente de campo'), findsOneWidget);
+    expect(find.text('Supervisor'), findsOneWidget);
+    expect(find.text('Entrar como agente'), findsOneWidget);
+  });
+
+  testWidgets('escolher supervisor muda o botão de entrar', (tester) async {
+    await _pumpApp(tester, backend: FakeBackend());
+    await tester.tap(find.text('Supervisor'));
+    await tester.pump();
+    expect(find.text('Entrar como supervisor'), findsOneWidget);
   });
 
   testWidgets('campos vazios mostram erro de validação', (tester) async {
     await _pumpApp(tester, backend: FakeBackend());
-    await tester.tap(find.widgetWithText(FilledButton, 'Entrar'));
+    await tester.tap(find.byType(FilledButton));
     await tester.pumpAndSettle();
     expect(find.text('Informe sua matrícula.'), findsOneWidget);
     expect(find.text('Informe sua senha.'), findsOneWidget);
   });
 
-  testWidgets('login com sucesso guarda o auth code e abre a Home',
-      (tester) async {
+  testWidgets('senha usa teclado de texto, sem sugestões, e pode ser mostrada', (tester) async {
+    await _pumpApp(tester, backend: FakeBackend());
+    final senha = tester.widget<TextField>(find.byType(TextField).at(1));
+    expect(senha.obscureText, isTrue);
+    expect(senha.keyboardType, TextInputType.visiblePassword);
+    expect(senha.enableSuggestions, isFalse);
+
+    // "próximo" na matrícula leva o foco para a senha
+    await tester.showKeyboard(find.byType(TextField).at(0));
+    await tester.testTextInput.receiveAction(TextInputAction.next);
+    await tester.pumpAndSettle();
+    final focused = tester.widget<TextField>(find.byType(TextField).at(1)).focusNode!;
+    expect(focused.hasFocus, isTrue);
+  });
+
+  testWidgets('agente entra, escolhe a quadra 1106 e vê a Home', (tester) async {
     final storage = InMemoryAuthStorage();
     await _pumpApp(tester, backend: FakeBackend(), storage: storage);
-    await _fillAndSubmitLogin(tester);
+    await _login(tester, '123456', 'ace123');
 
     expect(await storage.readAuthCode(), 'abc123');
-    expect(find.text('Roteiro de hoje'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Entrar'), findsNothing);
+    expect(find.text('Em qual quadra você trabalha hoje?'), findsOneWidget);
+    await tester.tap(find.text('Abrir mapa da quadra'));
+    await tester.pumpAndSettle();
+
+    expect(await storage.readQuadra(), '1106');
+    expect(find.text('Últimas visitas'), findsOneWidget);
+    expect(find.text('2 lotes esperam visita hoje.'), findsOneWidget);
   });
 
-  testWidgets('login com erro mostra a mensagem na tela de Login',
-      (tester) async {
+  testWidgets('login com erro mostra a mensagem e não guarda nada', (tester) async {
     final storage = InMemoryAuthStorage();
-    await _pumpApp(tester, backend: FakeBackend(loginOk: false), storage: storage);
-    await _fillAndSubmitLogin(tester);
+    await _pumpApp(tester, backend: FakeBackend(), storage: storage);
+    await _login(tester, '123456', 'errada');
 
     expect(find.text('Matrícula ou senha incorreta.'), findsOneWidget);
-    expect(find.text('Roteiro de hoje'), findsNothing);
     expect(await storage.readAuthCode(), isNull);
   });
 
-  testWidgets('com auth code salvo abre direto na Home', (tester) async {
-    await _pumpApp(
-      tester,
-      backend: FakeBackend(),
-      storage: InMemoryAuthStorage('abc123'),
-    );
-    expect(find.text('Roteiro de hoje'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Entrar'), findsNothing);
+  testWidgets('matrícula de agente não entra como supervisor', (tester) async {
+    await _pumpApp(tester, backend: FakeBackend());
+    await _login(tester, '123456', 'ace123', supervisor: true);
+    expect(find.text('Esta matrícula não entra como supervisor.'), findsOneWidget);
   });
 
-  testWidgets('sessão expirada limpa o storage e volta ao Login',
-      (tester) async {
-    final storage = InMemoryAuthStorage('velho');
-    await _pumpApp(
-      tester,
-      backend: FakeBackend(sessionValid: false),
-      storage: storage,
-    );
-    expect(find.widgetWithText(FilledButton, 'Entrar'), findsOneWidget);
+  testWidgets('supervisor entra no painel da quadra', (tester) async {
+    final storage = InMemoryAuthStorage();
+    await _pumpApp(tester, backend: FakeBackend(), storage: storage);
+    await _login(tester, '654321', 'sup123', supervisor: true);
+
+    expect(await storage.readPerfil(), 'supervisor');
+    expect(find.text('Andamento de hoje'), findsOneWidget);
+    expect(find.text('Visitas registradas (2)'), findsOneWidget);
+  });
+
+  testWidgets('com sessão e quadra salvas abre direto na Home', (tester) async {
+    await _pumpApp(tester, backend: FakeBackend(), storage: _agentSession());
+    expect(find.text('Últimas visitas'), findsOneWidget);
+    expect(find.byType(FilledButton), findsWidgets);
+    expect(find.text('Entrar como agente'), findsNothing);
+  });
+
+  testWidgets('sessão expirada limpa o storage e volta ao Login', (tester) async {
+    final storage = _agentSession();
+    await _pumpApp(tester, backend: FakeBackend(sessionValid: false), storage: storage);
+    expect(find.text('Entrar como agente'), findsOneWidget);
     expect(await storage.readAuthCode(), isNull);
   });
 
-  testWidgets('registrar visita envia o status para a API', (tester) async {
+  testWidgets('aba Mapa mostra o mapa 3D e a legenda', (tester) async {
+    await _pumpApp(tester, backend: FakeBackend(), storage: _agentSession());
+    await tester.tap(find.text('Mapa'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AceIsoMap), findsOneWidget);
+    expect(find.text('2 a visitar'), findsOneWidget);
+    expect(find.text('1 visitado'), findsOneWidget);
+    expect(find.text('1 recusa / ausente'), findsOneWidget);
+  });
+
+  testWidgets('lote recusado vira visitado com as contagens', (tester) async {
     final backend = FakeBackend();
-    await _pumpApp(
-      tester,
-      backend: backend,
-      storage: InMemoryAuthStorage('abc123'),
-    );
+    await _pumpApp(tester, backend: backend, storage: _agentSession());
 
-    await tester.tap(find.text('Rua dos Buritis, 61'));
+    await tester.tap(find.textContaining('recusa ou ninguém em casa'));
     await tester.pumpAndSettle();
     expect(find.text('Resultado da visita'), findsOneWidget);
 
-    await tester.tap(find.descendant(
-      of: find.byType(AceStatusSelector),
-      matching: find.text('Com foco'),
-    ));
-    await tester.pump();
-    await tester.tap(find.widgetWithText(FilledButton, 'Salvar visita'));
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('Visitado').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Criadouros encontrados'), findsOneWidget);
 
-    final saved = backend.visits.firstWhere((v) => v['id'] == 6);
-    expect(saved['status'], 'com_foco');
+    await tester.tap(find.byTooltip('Aumentar larvas'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Aumentar larvas'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Aumentar locais com focos'));
+    await tester.pump();
+    await tester.tap(find.text('Salvar visita'));
+    await tester.pumpAndSettle();
+
+    expect(backend.lastVisitBody,
+        {'resultado': 'visitado', 'criadouros': 0, 'larvas': 2, 'animais': 0, 'focos': 1});
+    expect(backend.lotes[1]['status'], 'visitado');
     expect(find.text('Resultado da visita'), findsNothing);
+  });
+
+  testWidgets('salvar sem escolher o resultado pede a escolha', (tester) async {
+    final backend = FakeBackend();
+    await _pumpApp(tester, backend: backend, storage: _agentSession());
+    await tester.tap(find.text('Mapa'));
+    await tester.pumpAndSettle();
+    // mapa pequeno (2 × 4 lotes): o toque cai direto na casa do lote 4 (pendente)
+    final map = tester.getRect(find.byType(AceIsoMap));
+    await tester.tapAt(map.center + Offset(0, map.height * 0.22));
+    await tester.pumpAndSettle();
+    expect(find.text('Resultado da visita'), findsOneWidget);
+    expect(find.text('Lote 4'), findsOneWidget);
+    await tester.tap(find.text('Salvar visita'));
+    await tester.pumpAndSettle();
+    expect(find.text('Escolha o resultado da visita.'), findsOneWidget);
+    expect(backend.lastVisitBody, isNull);
   });
 }

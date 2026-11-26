@@ -4,6 +4,7 @@ import 'config/api_config.dart';
 import 'network/api_client.dart';
 import 'repositories/agent_repository.dart';
 import 'repositories/auth_repository.dart';
+import 'repositories/quadras_repository.dart';
 import 'repositories/visits_repository.dart';
 import 'storage/auth_storage.dart';
 
@@ -15,6 +16,7 @@ class AceCore {
     required this.auth,
     required this.agent,
     required this.visits,
+    required this.quadras,
   });
 
   final ApiClient api;
@@ -22,6 +24,7 @@ class AceCore {
   final AuthRepository auth;
   final AgentRepository agent;
   final VisitsRepository visits;
+  final QuadrasRepository quadras;
 
   /// [baseUrl], [httpClient] e [storage] existem para testes; no app use `create()`.
   factory AceCore.create({
@@ -41,6 +44,7 @@ class AceCore {
       auth: AuthRepository(api, store),
       agent: AgentRepository(api),
       visits: VisitsRepository(api),
+      quadras: QuadrasRepository(api, store),
     );
   }
 }

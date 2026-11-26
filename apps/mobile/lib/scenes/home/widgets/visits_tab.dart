@@ -2,48 +2,61 @@ import 'package:ace_core/ace_core.dart';
 import 'package:ace_design_system/ace_design_system.dart';
 import 'package:flutter/material.dart';
 
-import '../home_view_model.dart';
-import '../visit_presenters.dart';
+import '../../shared/lot_presenters.dart';
+import '../../shared/quadra_widgets.dart';
 
-/// Aba "Visitas": lista completa do dia.
-class VisitsTab extends StatelessWidget {
-  const VisitsTab({super.key, required this.vm, required this.onOpenVisit});
+/// Lista dos lotes trabalhados, com filtro por situação.
+class VisitsTab extends StatefulWidget {
+  const VisitsTab({super.key, required this.quadra, required this.onOpenLote});
 
-  final HomeViewModel vm;
-  final ValueChanged<Visit> onOpenVisit;
+  final Quadra quadra;
+  final ValueChanged<Lote> onOpenLote;
+
+  @override
+  State<VisitsTab> createState() => _VisitsTabState();
+}
+
+class _VisitsTabState extends State<VisitsTab> {
+  LoteStatus? _filter;
 
   @override
   Widget build(BuildContext context) {
-    if (vm.status != HomeStatus.ready) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    final visits = vm.pendingFirst;
-    return RefreshIndicator(
-      onRefresh: () => vm.load(silent: true),
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(AceSpacing.page),
-        children: [
-          Text('Visitas de hoje', style: context.text.headlineSmall),
-          const SizedBox(height: AceSpacing.x1),
-          Text(
-            '${visits.length} imóveis no roteiro',
-            style: context.text.bodyMedium?.copyWith(color: context.ace.textMuted),
-          ),
-          const SizedBox(height: AceSpacing.x4),
-          for (final v in visits)
+    final q = widget.quadra;
+    final all = lotesTrabalhados(q);
+    final shown = _filter == null ? all : all.where((l) => l.status == _filter).toList();
+    return ListView(
+      padding: const EdgeInsets.all(AceSpacing.page),
+      children: [
+        Wrap(
+          spacing: AceSpacing.x2,
+          children: [
+            ChoiceChip(
+              label: Text('Todas (${all.length})'),
+              selected: _filter == null,
+              onSelected: (_) => setState(() => _filter = null),
+            ),
+            for (final s in [LoteStatus.visitado, LoteStatus.semAcesso])
+              ChoiceChip(
+                label: Text('${aceLotStatusOf(s).label} (${all.where((l) => l.status == s).length})'),
+                selected: _filter == s,
+                onSelected: (_) => setState(() => _filter = s),
+              ),
+          ],
+        ),
+        const SizedBox(height: AceSpacing.x4),
+        if (shown.isEmpty)
+          const AceEmptyState(
+            icon: Icons.fact_check_outlined,
+            title: 'Nada por aqui',
+            message: 'As visitas registradas no mapa aparecem nesta lista.',
+          )
+        else
+          for (final l in shown)
             Padding(
               padding: const EdgeInsets.only(bottom: AceSpacing.x2),
-              child: AceVisitTile(
-                lot: v.lote,
-                address: v.endereco,
-                detail: visitDetail(v),
-                status: aceStatusOf(v.status),
-                onTap: () => onOpenVisit(v),
-              ),
+              child: LoteTile(quadra: q, lote: l, onTap: () => widget.onOpenLote(l)),
             ),
-        ],
-      ),
+      ],
     );
   }
 }

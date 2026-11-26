@@ -2,7 +2,7 @@
 
 Rodar:  uvicorn main:app --reload --host 0.0.0.0 --port 8000
 Docs interativas (Swagger): http://localhost:8000/docs
-Login de teste: matricula "123456" / senha "ace123"
+Login de teste: agente "123456" / "ace123" · supervisor "654321" / "sup123"
 """
 from __future__ import annotations
 
@@ -24,9 +24,13 @@ VisitStatus = Literal[
 # ----------------------------------------------------------------- modelos
 
 
+Perfil = Literal["agente", "supervisor"]
+
+
 class LoginRequest(BaseModel):
     matricula: str = Field(min_length=1, examples=["123456"])
     senha: str = Field(min_length=1, examples=["ace123"])
+    perfil: Perfil = Field("agente", description="Entrada escolhida no app")
 
 
 class Agent(BaseModel):
@@ -35,6 +39,7 @@ class Agent(BaseModel):
     matricula: str
     municipio: str
     area: str
+    perfil: Perfil = "agente"
 
 
 class LoginResponse(BaseModel):
@@ -85,8 +90,21 @@ AGENT = {
     "matricula": "123456",
     "municipio": "Palmas - TO",
     "area": "Área 07 · Quadras 12 a 14",
+    "perfil": "agente",
 }
-PASSWORD = "ace123"
+SUPERVISOR = {
+    "id": 2,
+    "nome": "Marina Lopes",
+    "matricula": "654321",
+    "municipio": "Palmas - TO",
+    "area": "Supervisão · Região Sul",
+    "perfil": "supervisor",
+}
+# matrícula -> (usuário, senha)
+USERS = {
+    AGENT["matricula"]: (AGENT, "ace123"),
+    SUPERVISOR["matricula"]: (SUPERVISOR, "sup123"),
+}
 SESSION_HOURS = 12
 
 
@@ -118,7 +136,7 @@ def _seed_visits() -> dict[int, dict]:
 
 
 VISITS: dict[int, dict] = _seed_visits()
-SESSIONS: dict[str, datetime] = {}  # auth_code -> expiração
+SESSIONS: dict[str, tuple[datetime, dict]] = {}  # auth_code -> (expiração, usuário)
 GOAL = 10
 
 # ------------------------------------------------------------------- erros
@@ -170,11 +188,11 @@ def current_agent(authorization: Optional[str] = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise expired
     code = authorization.removeprefix("Bearer ").strip()
-    exp = SESSIONS.get(code)
-    if exp is None or exp < datetime.now(timezone.utc):
+    session = SESSIONS.get(code)
+    if session is None or session[0] < datetime.now(timezone.utc):
         SESSIONS.pop(code, None)
         raise expired
-    return AGENT
+    return session[1]
 
 
 @app.get("/health", tags=["infra"])
@@ -185,16 +203,24 @@ def health():
 @app.post(
     "/auth/login",
     response_model=LoginResponse,
-    responses={401: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+    responses={
+        401: {"model": ErrorResponse},
+        403: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+    },
     tags=["auth"],
 )
 def login(body: LoginRequest):
-    if body.matricula != AGENT["matricula"] or body.senha != PASSWORD:
+    user, password = USERS.get(body.matricula, (None, None))
+    if user is None or body.senha != password:
         raise ApiError(401, "invalid_credentials", "Matrícula ou senha incorreta.")
+    if user["perfil"] != body.perfil:
+        nome = "supervisor" if body.perfil == "supervisor" else "agente de campo"
+        raise ApiError(403, "wrong_profile", f"Esta matrícula não entra como {nome}.")
     code = secrets.token_urlsafe(24)
     expires = datetime.now(timezone.utc) + timedelta(hours=SESSION_HOURS)
-    SESSIONS[code] = expires
-    return {"auth_code": code, "expires_at": expires, "agent": AGENT}
+    SESSIONS[code] = (expires, user)
+    return {"auth_code": code, "expires_at": expires, "agent": user}
 
 
 @app.post("/auth/logout", status_code=204, tags=["auth"])
@@ -266,6 +292,258 @@ def update_visit(visit_id: int, body: VisitUpdate, _=Depends(current_agent)):
     return visit
 
 
+# ------------------------------------------------------------------ quadras
+#
+# Quadra 1106 Sul (ARSE 112, Palmas - TO), desenhada a partir da planta de
+# parcelamento da Prefeitura (março de 2015). Representação esquemática: cada
+# conjunto é uma fila dupla de lotes voltada para a sua alameda. Unidade = 1
+# testada de lote (~12 m); x cresce para leste, y para sul.
+
+LoteStatus = Literal["pendente", "visitado", "sem_acesso"]
+Resultado = Literal["visitado", "recusado"]
+
+
+class VisitaLote(BaseModel):
+    resultado: Resultado
+    horario: str
+    agente: str
+    criadouros: int = 0
+    larvas: int = 0
+    animais: int = 0
+    focos: int = 0
+
+
+class Lote(BaseModel):
+    id: str
+    numero: int
+    x: float
+    y: float
+    w: float
+    d: float
+    status: LoteStatus
+    visita: Optional[VisitaLote] = None
+
+
+class Conjunto(BaseModel):
+    id: str
+    nome: str
+    x: float
+    y: float
+    w: float
+    h: float
+    lotes: list[Lote]
+
+
+class AreaLivre(BaseModel):
+    nome: str
+    x: float
+    y: float
+    w: float
+    h: float
+
+
+class QuadraResumo(BaseModel):
+    id: str
+    nome: str
+    bairro: str
+    total_lotes: int
+    visitados: int
+    sem_acesso: int
+    pendentes: int
+
+
+class Quadra(QuadraResumo):
+    largura: float
+    altura: float
+    areas: list[AreaLivre]
+    conjuntos: list[Conjunto]
+
+
+class VisitaRequest(BaseModel):
+    resultado: Resultado
+    criadouros: int = Field(0, ge=0, le=999)
+    larvas: int = Field(0, ge=0, le=9999)
+    animais: int = Field(0, ge=0, le=99)
+    focos: int = Field(0, ge=0, le=999)
+
+
+# (alameda, x, y, lotes por fila, orientação: "h" = filas leste-oeste, "v" = norte-sul)
+_CONJUNTOS_1106 = [
+    # faixa oeste (Av. NS-4)
+    (1, 2, 3, 5, "h"), (3, 2, 9, 5, "h"), (5, 2, 15, 5, "h"), (7, 2, 21, 5, "h"),
+    (9, 2, 41, 5, "h"), (11, 2, 47, 5, "h"), (13, 2, 53, 5, "h"), (15, 2, 59, 5, "h"),
+    # miolo oeste
+    (2, 9, 3, 8, "v"), (4, 9, 13, 8, "v"), (10, 9, 41, 8, "v"), (12, 9, 51, 8, "v"),
+    # centro norte (Alamedas 33, 31, 29), dois conjuntos por alameda
+    (33, 15, 3, 8, "h"), (33, 25, 3, 8, "h"),
+    (31, 15, 9, 8, "h"), (31, 25, 9, 8, "h"),
+    (29, 15, 15, 8, "h"), (29, 25, 15, 8, "h"),
+    # centro sul (Alamedas 25, 23, 21)
+    (25, 15, 41, 8, "h"), (25, 25, 41, 8, "h"),
+    (23, 15, 47, 8, "h"), (23, 25, 47, 8, "h"),
+    (21, 15, 53, 8, "h"), (21, 25, 53, 8, "h"),
+    # miolo leste
+    (34, 35, 3, 8, "v"), (36, 35, 13, 8, "v"), (42, 35, 41, 8, "v"), (44, 35, 51, 8, "v"),
+    # faixa leste (Av. NS-10)
+    (35, 41, 3, 5, "h"), (37, 41, 9, 5, "h"), (39, 41, 15, 5, "h"), (41, 41, 21, 5, "h"),
+    (43, 41, 41, 5, "h"), (45, 41, 47, 5, "h"), (47, 41, 53, 5, "h"), (49, 41, 59, 5, "h"),
+]
+_PARTIDAS = {21, 23, 25, 29, 31, 33}  # alamedas com dois conjuntos (oeste e leste)
+_AREAS_1106 = [
+    {"nome": "Área verde · esporte e lazer", "x": 15, "y": 23, "w": 18, "h": 14},
+    {"nome": "Escola municipal", "x": 2, "y": 28, "w": 11, "h": 9},
+    {"nome": "Paróquia São José", "x": 35, "y": 28, "w": 11, "h": 9},
+]
+_QUADRA_LARGURA, _QUADRA_ALTURA = 48, 65
+
+
+def _lote_id(alameda: int, numero: int) -> str:
+    return f"AL{alameda:02d}-L{numero:02d}"
+
+
+def _build_1106() -> dict:
+    conjuntos, next_num = [], {}
+    for alameda, x0, y0, n, orient in _CONJUNTOS_1106:
+        start = next_num.get(alameda, 1)
+        lotes = []
+        for fila in range(2):
+            for i in range(n):
+                num = start + fila * n + i
+                if orient == "h":
+                    geo = {"x": x0 + i, "y": y0 + fila * 2, "w": 1, "d": 2}
+                else:
+                    geo = {"x": x0 + fila * 2, "y": y0 + i, "w": 2, "d": 1}
+                lotes.append({
+                    "id": _lote_id(alameda, num), "numero": num, **geo,
+                    "status": "pendente", "visita": None,
+                })
+        next_num[alameda] = start + 2 * n
+        w, h = (n, 4) if orient == "h" else (4, n)
+        lado = ""
+        if alameda in _PARTIDAS:
+            lado = " · oeste" if x0 < 20 else " · leste"
+        conjuntos.append({
+            "id": f"AL{alameda:02d}-{x0:02d}{y0:02d}",
+            "nome": f"Alameda {alameda}{lado}",
+            "x": x0, "y": y0, "w": w, "h": h, "lotes": lotes,
+        })
+    return {
+        "id": "1106",
+        "nome": "Quadra 1106 Sul",
+        "bairro": "ARSE 112 · Palmas - TO",
+        "largura": _QUADRA_LARGURA,
+        "altura": _QUADRA_ALTURA,
+        "areas": _AREAS_1106,
+        "conjuntos": conjuntos,
+    }
+
+
+# visitas já feitas no começo do dia (demonstração)
+_SEED_LOTES = {
+    "AL01-L01": ("visitado", "07:40", 2, 0, 1, 0),
+    "AL01-L02": ("visitado", "07:52", 0, 0, 0, 0),
+    "AL01-L03": ("recusado", "08:01", 0, 0, 0, 0),
+    "AL01-L04": ("visitado", "08:10", 3, 12, 2, 1),
+    "AL01-L06": ("visitado", "08:24", 1, 0, 0, 0),
+    "AL01-L07": ("recusado", "08:31", 0, 0, 0, 0),
+    "AL03-L01": ("visitado", "08:45", 0, 0, 1, 0),
+    "AL03-L02": ("visitado", "08:58", 4, 30, 0, 2),
+}
+
+
+def _apply_visit(lote, resultado, horario, agente, cri=0, lar=0, ani=0, foc=0):
+    visitado = resultado == "visitado"
+    lote["status"] = "visitado" if visitado else "sem_acesso"
+    lote["visita"] = {
+        "resultado": resultado,
+        "horario": horario,
+        "agente": agente,
+        "criadouros": cri if visitado else 0,
+        "larvas": lar if visitado else 0,
+        "animais": ani if visitado else 0,
+        "focos": foc if visitado else 0,
+    }
+
+
+def _seed_quadras() -> dict[str, dict]:
+    q = _build_1106()
+    by_id = {lote["id"]: lote for c in q["conjuntos"] for lote in c["lotes"]}
+    for lote_id, (res, hor, cri, lar, ani, foc) in _SEED_LOTES.items():
+        _apply_visit(by_id[lote_id], res, hor, AGENT["nome"], cri, lar, ani, foc)
+    return {q["id"]: q}
+
+
+def _resumo(q: dict) -> dict:
+    lotes = [lote for c in q["conjuntos"] for lote in c["lotes"]]
+
+    def count(status: str) -> int:
+        return sum(lote["status"] == status for lote in lotes)
+
+    return {
+        "id": q["id"],
+        "nome": q["nome"],
+        "bairro": q["bairro"],
+        "total_lotes": len(lotes),
+        "visitados": count("visitado"),
+        "sem_acesso": count("sem_acesso"),
+        "pendentes": count("pendente"),
+    }
+
+
+QUADRAS: dict[str, dict] = _seed_quadras()
+
+
+def _quadra_or_404(quadra_id: str) -> dict:
+    q = QUADRAS.get(quadra_id)
+    if q is None:
+        raise ApiError(404, "quadra_not_found", "Quadra não encontrada.")
+    return q
+
+
+@app.get("/quadras", response_model=list[QuadraResumo], tags=["quadras"])
+def list_quadras(_=Depends(current_agent)):
+    return [_resumo(q) for q in QUADRAS.values()]
+
+
+@app.get(
+    "/quadras/{quadra_id}",
+    response_model=Quadra,
+    responses={404: {"model": ErrorResponse}},
+    tags=["quadras"],
+)
+def get_quadra(quadra_id: str, _=Depends(current_agent)):
+    q = _quadra_or_404(quadra_id)
+    return {**q, **_resumo(q)}
+
+
+@app.post(
+    "/quadras/{quadra_id}/lotes/{lote_id}/visita",
+    response_model=Lote,
+    responses={
+        403: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+    },
+    tags=["quadras"],
+)
+def registrar_visita(
+    quadra_id: str, lote_id: str, body: VisitaRequest, user=Depends(current_agent)
+):
+    if user["perfil"] != "agente":
+        raise ApiError(403, "forbidden", "Só o agente de campo registra visitas.")
+    q = _quadra_or_404(quadra_id)
+    lote = next(
+        (lt for c in q["conjuntos"] for lt in c["lotes"] if lt["id"] == lote_id), None
+    )
+    if lote is None:
+        raise ApiError(404, "lote_not_found", "Lote não encontrado.")
+    _apply_visit(
+        lote, body.resultado, datetime.now().strftime("%H:%M"), user["nome"],
+        body.criadouros, body.larvas, body.animais, body.focos,
+    )
+    return lote
+
+
 # --------------------------------------------------------------------- dev
 
 
@@ -274,5 +552,7 @@ def reset():
     """Restaura os dados iniciais (útil entre testes)."""
     VISITS.clear()
     VISITS.update(_seed_visits())
+    QUADRAS.clear()
+    QUADRAS.update(_seed_quadras())
     SESSIONS.clear()
     return Response(status_code=204)
