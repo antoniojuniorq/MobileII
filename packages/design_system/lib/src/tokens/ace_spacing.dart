@@ -19,9 +19,9 @@ abstract final class AceSpacing {
 
 /// Raios de borda. Controles menores que cartões; selos totalmente arredondados.
 abstract final class AceRadius {
-  static const double sm = 8;
-  static const double md = 12;
-  static const double lg = 16;
+  static const double sm = 6;
+  static const double md = 10;
+  static const double lg = 14;
   static const double pill = 999;
 }
 

@@ -170,8 +170,8 @@ class _LoginSceneState extends State<LoginScene> {
   }
 }
 
-/// Topo do login: o produto de verdade (o mapa 3D de um conjunto) sobre o
-/// verde da marca. Entra uma vez ao abrir.
+/// Topo do login: marca e uma frase sobre o trabalho, sobre o petróleo da
+/// marca. Entra uma vez ao abrir.
 class _LoginHero extends StatefulWidget {
   const _LoginHero();
 
@@ -181,13 +181,6 @@ class _LoginHero extends StatefulWidget {
 
 class _LoginHeroState extends State<_LoginHero> {
   bool _shown = false;
-
-  static const _sample = <(int, AceLotStatus)>[
-    (1, AceLotStatus.visitado), (2, AceLotStatus.visitado), (3, AceLotStatus.semAcesso),
-    (4, AceLotStatus.visitado), (5, AceLotStatus.pendente), (6, AceLotStatus.pendente),
-    (7, AceLotStatus.visitado), (8, AceLotStatus.semAcesso), (9, AceLotStatus.pendente),
-    (10, AceLotStatus.pendente), (11, AceLotStatus.pendente), (12, AceLotStatus.pendente),
-  ];
 
   @override
   void initState() {
@@ -200,27 +193,16 @@ class _LoginHeroState extends State<_LoginHero> {
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.paddingOf(context).top;
-    const onBrand = Color(0xFFE6F3EC);
-    final lots = [
-      for (final (n, s) in _sample)
-        AceIsoLot(
-          id: '$n',
-          x: ((n - 1) % 6).toDouble(),
-          y: n <= 6 ? 0 : 2,
-          w: 1,
-          d: 2,
-          status: s,
-          label: '$n',
-        ),
-    ];
+    const onBrand = AceColors.teal50;
     return Container(
-      color: AceColors.green800,
-      padding: EdgeInsets.fromLTRB(AceSpacing.page, top + AceSpacing.x5, AceSpacing.page, AceSpacing.x5),
+      color: AceColors.teal700,
+      padding: EdgeInsets.fromLTRB(
+          AceSpacing.page, top + AceSpacing.x6, AceSpacing.page, AceSpacing.x6),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 440),
           child: AnimatedSlide(
-            offset: _shown ? Offset.zero : const Offset(0, 0.04),
+            offset: _shown ? Offset.zero : const Offset(0, 0.06),
             duration: const Duration(milliseconds: 520),
             curve: AceMotion.curve,
             child: AnimatedOpacity(
@@ -231,36 +213,35 @@ class _LoginHeroState extends State<_LoginHero> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.health_and_safety, color: AceColors.amber500, size: 22),
-                      const SizedBox(width: AceSpacing.x2),
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: AceColors.white,
+                          borderRadius: BorderRadius.circular(AceRadius.sm),
+                        ),
+                        child: const Icon(Icons.health_and_safety,
+                            color: AceColors.teal700, size: 20),
+                      ),
+                      const SizedBox(width: AceSpacing.x3),
                       Text(
                         'ACE CONTROL',
-                        style: context.text.titleMedium?.copyWith(color: onBrand, letterSpacing: 1.2),
+                        style: context.text.titleMedium?.copyWith(
+                            color: AceColors.white, letterSpacing: 1.4),
                       ),
                     ],
                   ),
-                  const SizedBox(height: AceSpacing.x4),
+                  const SizedBox(height: AceSpacing.x6),
                   Text(
                     'Visita casa a casa, lote por lote.',
-                    style: context.text.headlineMedium?.copyWith(color: Colors.white),
+                    style: context.text.headlineMedium
+                        ?.copyWith(color: AceColors.white),
                   ),
                   const SizedBox(height: AceSpacing.x2),
                   Text(
-                    'Combate às endemias em Palmas - TO. Vermelho falta visitar, verde já foi, cinza não abriu.',
-                    style: context.text.bodyMedium?.copyWith(color: onBrand.withValues(alpha: 0.85)),
-                  ),
-                  const SizedBox(height: AceSpacing.x3),
-                  SizedBox(
-                    height: 150,
-                    child: AceIsoMap(
-                      interactive: false,
-                      showLabels: false,
-                      dark: true,
-                      lots: lots,
-                      worldWidth: 6,
-                      worldHeight: 4,
-                      semanticLabel: 'Exemplo de conjunto de lotes em 3D',
-                    ),
+                    'Combate às endemias em Palmas - TO.',
+                    style: context.text.bodyLarge
+                        ?.copyWith(color: onBrand.withValues(alpha: 0.9)),
                   ),
                 ],
               ),

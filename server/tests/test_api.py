@@ -110,24 +110,38 @@ def test_quadra_1106():
     assert [q["id"] for q in resumo] == ["1106"]
     q = client.get("/quadras/1106", headers=h).json()
     lotes = [lote for c in q["conjuntos"] for lote in c["lotes"]]
-    assert q["total_lotes"] == len(lotes) > 300
+    assert q["total_lotes"] == len(lotes) > 800
     assert len({lote["id"] for lote in lotes}) == len(lotes)
     assert (q["visitados"], q["sem_acesso"]) == (6, 2)
+    nomes = {c["nome"] for c in q["conjuntos"]}
+    assert {f"QI {n:02d}" for n in range(1, 48)} <= nomes
+    assert {"QC 01", "QC 02", "ACSV-SE 112"} <= nomes
 
 
-def test_lotes_nao_se_sobrepoem():
+def test_planta_fiel_ao_pdf():
+    """Conjuntos conferidos à mão no PDF da Prefeitura."""
     q = client.get("/quadras/1106", headers=_auth()).json()
-    rects = [(r["x"], r["y"], r["x"] + r["w"], r["y"] + r["h"]) for r in q["conjuntos"] + q["areas"]]
-    for i, a in enumerate(rects):
-        assert a[2] <= q["largura"] and a[3] <= q["altura"]
-        for b in rects[i + 1:]:
-            assert a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1], (a, b)
+    por_nome = {c["nome"]: c for c in q["conjuntos"]}
+
+    def nums(nome):
+        return sorted(int(lt["numero"].split("-")[0]) for lt in por_nome[nome]["lotes"])
+
+    assert nums("QI 14") == list(range(1, 34))   # bloco longo: lotes 1 a 33
+    assert nums("QI 02") == list(range(1, 11))   # entre as Alamedas 1 e 3: 1 a 10
+    acsv = [lt["numero"] for lt in por_nome["ACSV-SE 112"]["lotes"]]
+    assert "15-A" in acsv
+    for c in q["conjuntos"]:
+        numeros = [lt["numero"] for lt in c["lotes"]]
+        assert len(numeros) == len(set(numeros)), c["nome"]
+        for lt in c["lotes"]:
+            assert len(lt["poly"]) >= 3
+            assert all(0 <= x <= q["largura"] and 0 <= y <= q["altura"] for x, y in lt["poly"])
 
 
 def test_registrar_visita_no_lote():
     h = _auth()
     body = {"resultado": "visitado", "criadouros": 2, "larvas": 15, "animais": 1, "focos": 1}
-    r = client.post("/quadras/1106/lotes/AL05-L03/visita", json=body, headers=h)
+    r = client.post("/quadras/1106/lotes/QI03-L05/visita", json=body, headers=h)
     assert r.status_code == 200
     lote = r.json()
     assert lote["status"] == "visitado" and lote["visita"]["larvas"] == 15
@@ -136,14 +150,14 @@ def test_registrar_visita_no_lote():
 
 def test_recusa_zera_numeros():
     body = {"resultado": "recusado", "criadouros": 9}
-    r = client.post("/quadras/1106/lotes/AL05-L04/visita", json=body, headers=_auth())
+    r = client.post("/quadras/1106/lotes/QI03-L06/visita", json=body, headers=_auth())
     assert r.json()["status"] == "sem_acesso"
     assert r.json()["visita"]["criadouros"] == 0
 
 
 def test_visita_valida_numeros_e_lote():
     h = _auth()
-    bad = client.post("/quadras/1106/lotes/AL05-L03/visita",
+    bad = client.post("/quadras/1106/lotes/QI03-L05/visita",
                       json={"resultado": "visitado", "larvas": -1}, headers=h)
     assert bad.status_code == 422
     none = client.post("/quadras/1106/lotes/XX/visita", json={"resultado": "visitado"}, headers=h)
@@ -152,6 +166,6 @@ def test_visita_valida_numeros_e_lote():
 
 def test_supervisor_nao_registra_visita():
     code = client.post("/auth/login", json=SUP).json()["auth_code"]
-    r = client.post("/quadras/1106/lotes/AL05-L03/visita", json={"resultado": "visitado"},
+    r = client.post("/quadras/1106/lotes/QI03-L05/visita", json={"resultado": "visitado"},
                     headers={"Authorization": f"Bearer {code}"})
     assert r.status_code == 403

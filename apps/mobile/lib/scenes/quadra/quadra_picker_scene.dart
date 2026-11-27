@@ -3,47 +3,7 @@ import 'package:ace_design_system/ace_design_system.dart';
 import 'package:flutter/material.dart';
 
 import '../../navigation.dart';
-import '../scene_view_model.dart';
-
-enum QuadraPickerStatus { loading, ready, failure, unauthorized }
-
-class QuadraPickerViewModel extends SceneViewModel {
-  QuadraPickerViewModel(this._quadras, this._auth);
-
-  final QuadrasRepository _quadras;
-  final AuthRepository _auth;
-
-  QuadraPickerStatus status = QuadraPickerStatus.loading;
-  List<QuadraResumo> quadras = const [];
-  String? selected;
-  String? errorMessage;
-
-  Future<void> load() async {
-    status = QuadraPickerStatus.loading;
-    notifyListeners();
-    try {
-      quadras = await _quadras.list();
-      selected = await _quadras.quadraEscolhida() ?? quadras.firstOrNull?.id;
-      status = QuadraPickerStatus.ready;
-    } on ApiException catch (e) {
-      status = e.isUnauthorized ? QuadraPickerStatus.unauthorized : QuadraPickerStatus.failure;
-      errorMessage = e.message;
-    } catch (_) {
-      status = QuadraPickerStatus.failure;
-      errorMessage = 'Não foi possível carregar as quadras.';
-    }
-    notifyListeners();
-  }
-
-  void choose(String id) {
-    selected = id;
-    notifyListeners();
-  }
-
-  Future<void> confirm() async => _quadras.escolherQuadra(selected!);
-
-  Future<void> logout() => _auth.logout();
-}
+import 'quadra_picker_view_model.dart';
 
 /// O agente escolhe a quadra de atuação antes de ir a campo.
 class QuadraPickerScene extends StatefulWidget {
@@ -92,13 +52,17 @@ class _QuadraPickerSceneState extends State<QuadraPickerScene> {
       appBar: AppBar(
         title: const Text('Quadra de atuação'),
         actions: [
-          IconButton(tooltip: 'Sair da conta', onPressed: _logout, icon: const Icon(Icons.logout)),
+          IconButton(
+              tooltip: 'Sair da conta',
+              onPressed: _logout,
+              icon: const Icon(Icons.logout)),
         ],
       ),
       body: ListenableBuilder(
         listenable: _vm,
         builder: (context, _) => switch (_vm.status) {
-          QuadraPickerStatus.loading || QuadraPickerStatus.unauthorized =>
+          QuadraPickerStatus.loading ||
+          QuadraPickerStatus.unauthorized =>
             const Center(child: CircularProgressIndicator()),
           QuadraPickerStatus.failure => Center(
               child: AceEmptyState(
@@ -124,18 +88,21 @@ class _QuadraPickerSceneState extends State<QuadraPickerScene> {
             child: ListView(
               padding: const EdgeInsets.all(AceSpacing.page),
               children: [
-                Text('Em qual quadra você trabalha hoje?', style: context.text.headlineSmall),
+                Text('Em qual quadra você trabalha hoje?',
+                    style: context.text.headlineSmall),
                 const SizedBox(height: AceSpacing.x2),
                 Text(
                   'O mapa e as visitas do dia ficam nesta quadra. Dá para trocar depois no Perfil.',
-                  style: context.text.bodyMedium?.copyWith(color: context.ace.textMuted),
+                  style: context.text.bodyMedium
+                      ?.copyWith(color: context.ace.textMuted),
                 ),
                 const SizedBox(height: AceSpacing.x5),
                 for (final q in _vm.quadras) ...[
                   AceChoiceCard(
                     icon: Icons.grid_view_rounded,
                     title: q.nome,
-                    subtitle: '${q.bairro} · ${q.totalLotes} lotes · ${q.pendentes} a visitar',
+                    subtitle:
+                        '${q.bairro} · ${q.totalLotes} lotes · ${q.pendentes} a visitar',
                     selected: _vm.selected == q.id,
                     onTap: () => _vm.choose(q.id),
                   ),

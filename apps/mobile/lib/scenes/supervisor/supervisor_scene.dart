@@ -4,50 +4,11 @@ import 'package:flutter/material.dart';
 
 import '../../navigation.dart';
 import '../home/widgets/profile_tab.dart';
-import '../scene_view_model.dart';
 import '../shared/lot_presenters.dart';
 import '../shared/lot_visit_sheet.dart';
 import '../shared/quadra_map_view.dart';
 import '../shared/quadra_widgets.dart';
-
-enum SupervisorStatus { loading, ready, failure, unauthorized }
-
-class SupervisorViewModel extends SceneViewModel {
-  SupervisorViewModel(this._agentRepo, this._quadras, this._auth);
-
-  final AgentRepository _agentRepo;
-  final QuadrasRepository _quadras;
-  final AuthRepository _auth;
-
-  SupervisorStatus status = SupervisorStatus.loading;
-  Agent? me;
-  List<QuadraResumo> quadras = const [];
-  Quadra? quadra;
-  String? errorMessage;
-
-  Future<void> load({String? quadraId, bool silent = false}) async {
-    if (!silent) {
-      status = SupervisorStatus.loading;
-      notifyListeners();
-    }
-    try {
-      me = await _agentRepo.me();
-      quadras = await _quadras.list();
-      final id = quadraId ?? quadra?.id ?? quadras.firstOrNull?.id;
-      quadra = id == null ? null : await _quadras.get(id);
-      status = SupervisorStatus.ready;
-    } on ApiException catch (e) {
-      status = e.isUnauthorized ? SupervisorStatus.unauthorized : SupervisorStatus.failure;
-      errorMessage = e.message;
-    } catch (_) {
-      status = SupervisorStatus.failure;
-      errorMessage = 'Não foi possível carregar. Tente novamente.';
-    }
-    notifyListeners();
-  }
-
-  Future<void> logout() => _auth.logout();
-}
+import 'supervisor_view_model.dart';
 
 /// Painel do supervisor: andamento da quadra, achados, mapa e visitas (só leitura).
 class SupervisorScene extends StatefulWidget {
@@ -60,7 +21,8 @@ class SupervisorScene extends StatefulWidget {
 }
 
 class _SupervisorSceneState extends State<SupervisorScene> {
-  late final _vm = SupervisorViewModel(widget.core.agent, widget.core.quadras, widget.core.auth);
+  late final _vm = SupervisorViewModel(
+      widget.core.agent, widget.core.quadras, widget.core.auth);
   int _tab = 0;
   bool _leaving = false;
   String? _selectedLote;
@@ -136,7 +98,7 @@ class _SupervisorSceneState extends State<SupervisorScene> {
         quadra: q,
         selectedLoteId: _selectedLote,
         onLoteTap: _openLote,
-        hint: 'Toque num conjunto para aproximar e numa casa para ver a visita.',
+        hint: 'Toque num conjunto para aproximar e num lote para ver a visita.',
       );
     }
     return _overview(q);
@@ -148,13 +110,15 @@ class _SupervisorSceneState extends State<SupervisorScene> {
       onRefresh: () => _vm.load(silent: true),
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(AceSpacing.page, AceSpacing.x5, AceSpacing.page, AceSpacing.x6),
+        padding: const EdgeInsets.fromLTRB(
+            AceSpacing.page, AceSpacing.x5, AceSpacing.page, AceSpacing.x6),
         children: [
           Text('Andamento de hoje', style: context.text.headlineSmall),
           const SizedBox(height: AceSpacing.x1),
           Text(
             'Atualize puxando a tela para baixo.',
-            style: context.text.bodyMedium?.copyWith(color: context.ace.textMuted),
+            style:
+                context.text.bodyMedium?.copyWith(color: context.ace.textMuted),
           ),
           if (_vm.quadras.length > 1) ...[
             const SizedBox(height: AceSpacing.x3),
@@ -183,13 +147,15 @@ class _SupervisorSceneState extends State<SupervisorScene> {
             variant: AceButtonVariant.secondary,
             onPressed: () => setState(() => _tab = 1),
           ),
-          AceSectionHeader(title: 'Visitas registradas (${trabalhados.length})'),
+          AceSectionHeader(
+              title: 'Visitas registradas (${trabalhados.length})'),
           if (trabalhados.isEmpty)
             const AceCard(
               child: AceEmptyState(
                 icon: Icons.fact_check_outlined,
                 title: 'Nenhuma visita ainda',
-                message: 'As visitas dos agentes aparecem aqui assim que forem salvas.',
+                message:
+                    'As visitas dos agentes aparecem aqui assim que forem salvas.',
               ),
             )
           else
@@ -210,11 +176,14 @@ class _SupervisorSceneState extends State<SupervisorScene> {
         title: ListenableBuilder(
           listenable: _vm,
           builder: (context, _) => Text(
-            _vm.quadra == null ? 'Supervisão' : 'Supervisão · ${_vm.quadra!.nome}',
+            _vm.quadra == null
+                ? 'Supervisão'
+                : 'Supervisão · ${_vm.quadra!.nome}',
           ),
         ),
       ),
-      body: ListenableBuilder(listenable: _vm, builder: (context, _) => _body()),
+      body:
+          ListenableBuilder(listenable: _vm, builder: (context, _) => _body()),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
         onDestinationSelected: (i) {
@@ -222,13 +191,19 @@ class _SupervisorSceneState extends State<SupervisorScene> {
           if (i != 2) _vm.load(silent: true);
         },
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.insights_outlined), selectedIcon: Icon(Icons.insights), label: 'Painel'),
+          NavigationDestination(
+              icon: Icon(Icons.insights_outlined),
+              selectedIcon: Icon(Icons.insights),
+              label: 'Painel'),
           NavigationDestination(
             icon: Icon(Icons.view_in_ar_outlined),
             selectedIcon: Icon(Icons.view_in_ar),
             label: 'Mapa',
           ),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Perfil'),
+          NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person),
+              label: 'Perfil'),
         ],
       ),
     );

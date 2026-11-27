@@ -28,11 +28,14 @@ class QuadraProgressCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(r.nome, style: context.text.titleLarge),
-                    Text(r.bairro, style: context.text.bodySmall?.copyWith(color: context.ace.textMuted)),
+                    Text(r.bairro,
+                        style: context.text.bodySmall
+                            ?.copyWith(color: context.ace.textMuted)),
                   ],
                 ),
               ),
-              if (onChange != null) TextButton(onPressed: onChange, child: const Text('Trocar')),
+              if (onChange != null)
+                TextButton(onPressed: onChange, child: const Text('Trocar')),
             ],
           ),
           const SizedBox(height: AceSpacing.x4),
@@ -45,13 +48,15 @@ class QuadraProgressCard extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Text(
                   'de ${r.totalLotes} lotes trabalhados',
-                  style: context.text.bodyMedium?.copyWith(color: context.ace.textMuted),
+                  style: context.text.bodyMedium
+                      ?.copyWith(color: context.ace.textMuted),
                 ),
               ),
             ],
           ),
           const SizedBox(height: AceSpacing.x3),
-          AceProgressBar(value: r.progresso, semanticLabel: 'Lotes trabalhados'),
+          AceProgressBar(
+              value: r.progresso, semanticLabel: 'Lotes trabalhados'),
           const SizedBox(height: AceSpacing.x4),
           AceLotLegend(counts: lotCountsOf(quadra.lotes)),
         ],
@@ -91,7 +96,8 @@ class AchadosRow extends StatelessWidget {
                     color: context.colors.primaryContainer,
                     borderRadius: BorderRadius.circular(AceRadius.sm),
                   ),
-                  child: Icon(it.$3, size: 20, color: context.colors.onPrimaryContainer),
+                  child: Icon(it.$3,
+                      size: 20, color: context.colors.onPrimaryContainer),
                 ),
                 const SizedBox(width: AceSpacing.x3),
                 Expanded(
@@ -102,7 +108,8 @@ class AchadosRow extends StatelessWidget {
                       Text(
                         it.$1,
                         maxLines: 2,
-                        style: context.text.bodySmall?.copyWith(color: context.ace.textMuted),
+                        style: context.text.bodySmall
+                            ?.copyWith(color: context.ace.textMuted),
                       ),
                     ],
                   ),
@@ -130,7 +137,8 @@ class AchadosRow extends StatelessWidget {
 
 /// Linha de um lote trabalhado: número na cor da situação, alameda e resumo.
 class LoteTile extends StatelessWidget {
-  const LoteTile({super.key, required this.quadra, required this.lote, this.onTap});
+  const LoteTile(
+      {super.key, required this.quadra, required this.lote, this.onTap});
 
   final Quadra quadra;
   final Lote lote;
@@ -149,9 +157,11 @@ class LoteTile extends StatelessWidget {
             width: 48,
             height: 48,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: s.color, borderRadius: BorderRadius.circular(AceRadius.md)),
+            decoration: BoxDecoration(
+                color: s.color,
+                borderRadius: BorderRadius.circular(AceRadius.md)),
             child: Text(
-              '${lote.numero}',
+              lote.numero,
               style: context.text.titleLarge?.copyWith(color: Colors.white),
             ),
           ),
@@ -160,11 +170,13 @@ class LoteTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(quadra.conjuntoDo(lote).nome, style: context.text.titleSmall),
+                Text(quadra.conjuntoDo(lote).titulo,
+                    style: context.text.titleSmall),
                 const SizedBox(height: 2),
                 Text(
                   v == null ? 'A visitar' : visitaResumo(v),
-                  style: context.text.bodySmall?.copyWith(color: context.ace.textMuted),
+                  style: context.text.bodySmall
+                      ?.copyWith(color: context.ace.textMuted),
                 ),
               ],
             ),

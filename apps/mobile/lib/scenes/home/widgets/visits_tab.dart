@@ -23,7 +23,8 @@ class _VisitsTabState extends State<VisitsTab> {
   Widget build(BuildContext context) {
     final q = widget.quadra;
     final all = lotesTrabalhados(q);
-    final shown = _filter == null ? all : all.where((l) => l.status == _filter).toList();
+    final shown =
+        _filter == null ? all : all.where((l) => l.status == _filter).toList();
     return ListView(
       padding: const EdgeInsets.all(AceSpacing.page),
       children: [
@@ -37,7 +38,8 @@ class _VisitsTabState extends State<VisitsTab> {
             ),
             for (final s in [LoteStatus.visitado, LoteStatus.semAcesso])
               ChoiceChip(
-                label: Text('${aceLotStatusOf(s).label} (${all.where((l) => l.status == s).length})'),
+                label: Text(
+                    '${aceLotStatusOf(s).label} (${all.where((l) => l.status == s).length})'),
                 selected: _filter == s,
                 onSelected: (_) => setState(() => _filter = s),
               ),
@@ -54,7 +56,8 @@ class _VisitsTabState extends State<VisitsTab> {
           for (final l in shown)
             Padding(
               padding: const EdgeInsets.only(bottom: AceSpacing.x2),
-              child: LoteTile(quadra: q, lote: l, onTap: () => widget.onOpenLote(l)),
+              child: LoteTile(
+                  quadra: q, lote: l, onTap: () => widget.onOpenLote(l)),
             ),
       ],
     );

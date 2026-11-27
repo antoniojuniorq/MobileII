@@ -19,7 +19,8 @@ class ProfileTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final muted = context.text.bodyMedium?.copyWith(color: context.ace.textMuted);
+    final muted =
+        context.text.bodyMedium?.copyWith(color: context.ace.textMuted);
     final supervisor = agent.perfil == Perfil.supervisor;
     return ListView(
       padding: const EdgeInsets.all(AceSpacing.page),

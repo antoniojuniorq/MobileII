@@ -51,12 +51,12 @@ class _ShowcasePageState extends State<ShowcasePage> {
 
           const AceSectionHeader(title: 'Cores da marca'),
           const Wrap(spacing: AceSpacing.x2, runSpacing: AceSpacing.x2, children: [
-            _Swatch('Verde 600', AceColors.green600, Colors.white),
-            _Swatch('Verde 800', AceColors.green800, Colors.white),
-            _Swatch('Verde 50', AceColors.green50, AceColors.green800),
+            _Swatch('Petróleo 600', AceColors.teal600, Colors.white),
+            _Swatch('Petróleo 700', AceColors.teal700, Colors.white),
+            _Swatch('Petróleo 50', AceColors.teal50, AceColors.teal700),
             _Swatch('Âmbar sol', AceColors.amber500, AceColors.amber900),
             _Swatch('Tinta', AceColors.ink900, Colors.white),
-            _Swatch('Névoa', AceColors.mist50, AceColors.ink900),
+            _Swatch('Gelo', AceColors.frost50, AceColors.ink900),
           ]),
 
           const AceSectionHeader(title: 'Tipografia'),

@@ -209,9 +209,12 @@ traz `perfil`.
 
 ## Quadras e lotes
 
-A Quadra 1106 Sul (ARSE 112, Palmas - TO) vem da planta de parcelamento da Prefeitura (março de
-2015) em forma esquemática: 36 conjuntos (filas duplas de lotes por alameda), 480 lotes. Medidas
-em testadas de lote (~12 m); `x` cresce para leste, `y` para sul.
+A Quadra 1106 Sul (ARSE 112, Palmas - TO) vem da **planta de parcelamento da Prefeitura**
+(PDF vetorial, março de 2015), em `server/data/quadra_1106.json`. Cada lote é o contorno fechado
+pelas linhas da camada `LOTE` do CAD, com o número desenhado dentro dele (camada `NUMERO_LOTE`),
+agrupado na sua Quadra Interna (camada `NUMERO_QUADRA`: QI 01–47, QC 01–02) e na faixa comercial
+ACSV-SE 112. São 831 lotes. Unidade: ponto do PDF (~1 m); `x` cresce para leste, `y` para sul.
+A numeração é por conjunto (ex.: QI 14 tem os lotes 1 a 33), como na planta.
 
 Situação do lote (`status`): `pendente` (vermelho no mapa), `visitado` (verde), `sem_acesso`
 (cinza: recusa ou ninguém em casa).
@@ -221,19 +224,23 @@ Situação do lote (`status`): `pendente` (vermelho no mapa), `visitado` (verde)
 ```json
 {
   "id": "1106", "nome": "Quadra 1106 Sul", "bairro": "ARSE 112 · Palmas - TO",
-  "total_lotes": 480, "visitados": 6, "sem_acesso": 2, "pendentes": 472,
-  "largura": 48, "altura": 65,
-  "areas": [{ "nome": "Área verde · esporte e lazer", "x": 15, "y": 23, "w": 18, "h": 14 }],
+  "total_lotes": 831, "visitados": 6, "sem_acesso": 2, "pendentes": 823,
+  "largura": 406.8, "altura": 390.0,
+  "areas": [{ "nome": "Área de esporte e lazer", "tipo": "park", "poly": [[180.5, 183.2], ...] }],
   "conjuntos": [{
-    "id": "AL01-0203", "nome": "Alameda 1", "x": 2, "y": 3, "w": 5, "h": 4,
+    "id": "QI01", "nome": "QI 01", "alameda": "Alameda 1",
     "lotes": [{
-      "id": "AL01-L04", "numero": 4, "x": 5, "y": 3, "w": 1, "d": 2, "status": "visitado",
+      "id": "QI01-L04", "numero": "4", "poly": [[34.8, 4.5], [41.2, 4.5], [41.2, 17.8], [34.8, 17.8]],
+      "status": "visitado",
       "visita": { "resultado": "visitado", "horario": "08:10", "agente": "Antonio Junior",
                   "criadouros": 3, "larvas": 12, "animais": 2, "focos": 1 }
     }]
   }]
 }
 ```
+
+`numero` é texto porque a planta tem lotes como `"15-A"`. `tipo` da área: `park` (praça, lazer)
+ou `building` (escola, igreja, postos).
 
 ### POST `/quadras/{id}/lotes/{lote}/visita`
 

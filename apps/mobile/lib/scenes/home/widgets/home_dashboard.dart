@@ -40,13 +40,16 @@ class HomeDashboard extends StatelessWidget {
       onRefresh: () => vm.load(silent: true),
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(AceSpacing.page, AceSpacing.x5, AceSpacing.page, AceSpacing.x6),
+        padding: const EdgeInsets.fromLTRB(
+            AceSpacing.page, AceSpacing.x5, AceSpacing.page, AceSpacing.x6),
         children: [
-          Text('${_greeting()}, ${agent.primeiroNome}', style: context.text.headlineSmall),
+          Text('${_greeting()}, ${agent.primeiroNome}',
+              style: context.text.headlineSmall),
           const SizedBox(height: AceSpacing.x1),
           Text(
             '${q.resumo.pendentes} lotes esperam visita hoje.',
-            style: context.text.bodyMedium?.copyWith(color: context.ace.textMuted),
+            style:
+                context.text.bodyMedium?.copyWith(color: context.ace.textMuted),
           ),
           if (vm.refreshError != null) ...[
             const SizedBox(height: AceSpacing.x4),
@@ -55,18 +58,24 @@ class HomeDashboard extends StatelessWidget {
           const SizedBox(height: AceSpacing.x5),
           QuadraProgressCard(quadra: q, onChange: onChangeQuadra),
           const SizedBox(height: AceSpacing.x3),
-          AceButton(label: 'Abrir mapa 3D da quadra', icon: Icons.view_in_ar_outlined, onPressed: onOpenMap),
+          AceButton(
+              label: 'Abrir mapa 3D da quadra',
+              icon: Icons.view_in_ar_outlined,
+              onPressed: onOpenMap),
           const SizedBox(height: AceSpacing.x5),
           Text('Encontrado hoje', style: context.text.titleMedium),
           const SizedBox(height: AceSpacing.x3),
           AchadosRow(achados: q.achados),
-          AceSectionHeader(title: 'Últimas visitas', actionLabel: 'Ver todas', onAction: onSeeAll),
+          AceSectionHeader(
+              title: 'Últimas visitas',
+              actionLabel: 'Ver todas',
+              onAction: onSeeAll),
           if (recentes.isEmpty)
             const AceCard(
               child: AceEmptyState(
                 icon: Icons.map_outlined,
                 title: 'Nenhuma visita ainda',
-                message: 'Toque numa casa do mapa para registrar a primeira.',
+                message: 'Toque num lote do mapa para registrar a primeira.',
               ),
             )
           else

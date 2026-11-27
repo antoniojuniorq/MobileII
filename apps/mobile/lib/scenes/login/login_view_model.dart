@@ -42,7 +42,8 @@ class LoginViewModel extends SceneViewModel {
     status = LoginStatus.loading;
     notifyListeners();
     try {
-      await _auth.login(matricula: matricula.trim(), senha: senha, perfil: perfil);
+      await _auth.login(
+          matricula: matricula.trim(), senha: senha, perfil: perfil);
       status = LoginStatus.success;
     } on ApiException catch (e) {
       status = LoginStatus.failure;

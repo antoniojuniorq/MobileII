@@ -31,16 +31,24 @@ const _supervisor = {
   'perfil': 'supervisor',
 };
 
-Map<String, dynamic> _lote(int n, String status, [Map<String, dynamic>? visita]) => {
-      'id': 'AL01-L${n.toString().padLeft(2, '0')}',
-      'numero': n,
-      'x': (n - 1) % 2,
-      'y': n <= 2 ? 0 : 2,
-      'w': 1,
-      'd': 2,
-      'status': status,
-      'visita': visita,
-    };
+Map<String, dynamic> _lote(int n, String status,
+    [Map<String, dynamic>? visita]) {
+  // dois lotes por fila (7 × 13), como na planta: 1 e 2 em cima, 3 e 4 embaixo
+  final x = ((n - 1) % 2) * 7.0;
+  final y = n <= 2 ? 0.0 : 13.0;
+  return {
+    'id': 'QI01-L${n.toString().padLeft(2, '0')}',
+    'numero': '$n',
+    'poly': [
+      [x, y],
+      [x + 7, y],
+      [x + 7, y + 13],
+      [x, y + 13]
+    ],
+    'status': status,
+    'visita': visita,
+  };
+}
 
 Map<String, dynamic> _visita(String resultado, {int larvas = 0}) => {
       'resultado': resultado,
@@ -80,25 +88,41 @@ class FakeBackend {
     final path = req.url.path;
     if (path == '/auth/login') {
       final body = jsonDecode(req.body) as Map<String, dynamic>;
-      final users = {'123456': (_agent, 'ace123'), '654321': (_supervisor, 'sup123')};
+      final users = {
+        '123456': (_agent, 'ace123'),
+        '654321': (_supervisor, 'sup123')
+      };
       final found = users[body['matricula']];
       if (found == null || found.$2 != body['senha']) {
         return _json({
-          'error': {'code': 'invalid_credentials', 'message': 'Matrícula ou senha incorreta.'},
+          'error': {
+            'code': 'invalid_credentials',
+            'message': 'Matrícula ou senha incorreta.'
+          },
         }, 401);
       }
       if (found.$1['perfil'] != body['perfil']) {
         return _json({
-          'error': {'code': 'wrong_profile', 'message': 'Esta matrícula não entra como supervisor.'},
+          'error': {
+            'code': 'wrong_profile',
+            'message': 'Esta matrícula não entra como supervisor.'
+          },
         }, 403);
       }
       user = found.$1;
-      return _json({'auth_code': 'abc123', 'expires_at': '2026-11-07T12:00:00Z', 'agent': found.$1});
+      return _json({
+        'auth_code': 'abc123',
+        'expires_at': '2026-11-07T12:00:00Z',
+        'agent': found.$1
+      });
     }
     if (path == '/auth/logout') return http.Response('', 204);
     if (!sessionValid) {
       return _json({
-        'error': {'code': 'unauthorized', 'message': 'Sessão expirada. Entre novamente.'},
+        'error': {
+          'code': 'unauthorized',
+          'message': 'Sessão expirada. Entre novamente.'
+        },
       }, 401);
     }
     if (path == '/me') return _json(user ?? _agent);
@@ -106,11 +130,16 @@ class FakeBackend {
     if (path == '/quadras/1106') {
       return _json({
         ..._resumo(),
-        'largura': 2,
-        'altura': 4,
+        'largura': 14,
+        'altura': 26,
         'areas': [],
         'conjuntos': [
-          {'id': 'AL01', 'nome': 'Alameda 1', 'x': 0, 'y': 0, 'w': 2, 'h': 4, 'lotes': lotes},
+          {
+            'id': 'QI01',
+            'nome': 'QI 01',
+            'alameda': 'Alameda 1',
+            'lotes': lotes
+          },
         ],
       });
     }
@@ -121,10 +150,13 @@ class FakeBackend {
       final l = lotes.firstWhere((e) => e['id'] == id);
       final ok = body['resultado'] == 'visitado';
       l['status'] = ok ? 'visitado' : 'sem_acesso';
-      l['visita'] = {..._visita(body['resultado'] as String), if (ok) ...body}..remove('id');
+      l['visita'] = {..._visita(body['resultado'] as String), if (ok) ...body}
+        ..remove('id');
       return _json(l);
     }
-    return _json({'error': {'code': 'not_found', 'message': 'Não encontrado'}}, 404);
+    return _json({
+      'error': {'code': 'not_found', 'message': 'Não encontrado'}
+    }, 404);
   });
 }
 
@@ -147,7 +179,8 @@ Future<AceCore> _pumpApp(
   return core;
 }
 
-Future<void> _login(WidgetTester tester, String matricula, String senha, {bool supervisor = false}) async {
+Future<void> _login(WidgetTester tester, String matricula, String senha,
+    {bool supervisor = false}) async {
   if (supervisor) {
     await tester.tap(find.text('Supervisor'));
     await tester.pump();
@@ -158,7 +191,8 @@ Future<void> _login(WidgetTester tester, String matricula, String senha, {bool s
   await tester.pumpAndSettle();
 }
 
-InMemoryAuthStorage _agentSession() => InMemoryAuthStorage('abc123', 'agente', '1106');
+InMemoryAuthStorage _agentSession() =>
+    InMemoryAuthStorage('abc123', 'agente', '1106');
 
 void main() {
   setUpAll(() => AceTypography.useGoogleFonts = false);
@@ -185,7 +219,8 @@ void main() {
     expect(find.text('Informe sua senha.'), findsOneWidget);
   });
 
-  testWidgets('senha usa teclado de texto, sem sugestões, e pode ser mostrada', (tester) async {
+  testWidgets('senha usa teclado de texto, sem sugestões, e pode ser mostrada',
+      (tester) async {
     await _pumpApp(tester, backend: FakeBackend());
     final senha = tester.widget<TextField>(find.byType(TextField).at(1));
     expect(senha.obscureText, isTrue);
@@ -196,11 +231,13 @@ void main() {
     await tester.showKeyboard(find.byType(TextField).at(0));
     await tester.testTextInput.receiveAction(TextInputAction.next);
     await tester.pumpAndSettle();
-    final focused = tester.widget<TextField>(find.byType(TextField).at(1)).focusNode!;
+    final focused =
+        tester.widget<TextField>(find.byType(TextField).at(1)).focusNode!;
     expect(focused.hasFocus, isTrue);
   });
 
-  testWidgets('agente entra, escolhe a quadra 1106 e vê a Home', (tester) async {
+  testWidgets('agente entra, escolhe a quadra 1106 e vê a Home',
+      (tester) async {
     final storage = InMemoryAuthStorage();
     await _pumpApp(tester, backend: FakeBackend(), storage: storage);
     await _login(tester, '123456', 'ace123');
@@ -215,7 +252,8 @@ void main() {
     expect(find.text('2 lotes esperam visita hoje.'), findsOneWidget);
   });
 
-  testWidgets('login com erro mostra a mensagem e não guarda nada', (tester) async {
+  testWidgets('login com erro mostra a mensagem e não guarda nada',
+      (tester) async {
     final storage = InMemoryAuthStorage();
     await _pumpApp(tester, backend: FakeBackend(), storage: storage);
     await _login(tester, '123456', 'errada');
@@ -227,7 +265,8 @@ void main() {
   testWidgets('matrícula de agente não entra como supervisor', (tester) async {
     await _pumpApp(tester, backend: FakeBackend());
     await _login(tester, '123456', 'ace123', supervisor: true);
-    expect(find.text('Esta matrícula não entra como supervisor.'), findsOneWidget);
+    expect(
+        find.text('Esta matrícula não entra como supervisor.'), findsOneWidget);
   });
 
   testWidgets('supervisor entra no painel da quadra', (tester) async {
@@ -247,9 +286,11 @@ void main() {
     expect(find.text('Entrar como agente'), findsNothing);
   });
 
-  testWidgets('sessão expirada limpa o storage e volta ao Login', (tester) async {
+  testWidgets('sessão expirada limpa o storage e volta ao Login',
+      (tester) async {
     final storage = _agentSession();
-    await _pumpApp(tester, backend: FakeBackend(sessionValid: false), storage: storage);
+    await _pumpApp(tester,
+        backend: FakeBackend(sessionValid: false), storage: storage);
     expect(find.text('Entrar como agente'), findsOneWidget);
     expect(await storage.readAuthCode(), isNull);
   });
@@ -285,8 +326,13 @@ void main() {
     await tester.tap(find.text('Salvar visita'));
     await tester.pumpAndSettle();
 
-    expect(backend.lastVisitBody,
-        {'resultado': 'visitado', 'criadouros': 0, 'larvas': 2, 'animais': 0, 'focos': 1});
+    expect(backend.lastVisitBody, {
+      'resultado': 'visitado',
+      'criadouros': 0,
+      'larvas': 2,
+      'animais': 0,
+      'focos': 1
+    });
     expect(backend.lotes[1]['status'], 'visitado');
     expect(find.text('Resultado da visita'), findsNothing);
   });

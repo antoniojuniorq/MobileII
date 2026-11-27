@@ -217,10 +217,10 @@ void main() {
         'largura': 10, 'altura': 10, 'areas': [],
         'conjuntos': [
           {
-            'id': 'c1', 'nome': 'Alameda 1', 'x': 0, 'y': 0, 'w': 2, 'h': 2,
+            'id': 'QI01', 'nome': 'QI 01', 'alameda': 'Alameda 1',
             'lotes': [
               {
-                'id': 'AL01-L01', 'numero': 1, 'x': 0, 'y': 0, 'w': 1, 'd': 2,
+                'id': 'QI01-L01', 'numero': '1', 'poly': [[0, 0], [1, 0], [1, 2], [0, 2]],
                 'status': 'visitado',
                 'visita': {
                   'resultado': 'visitado', 'horario': '08:00', 'agente': 'A',
@@ -228,7 +228,7 @@ void main() {
                 },
               },
               {
-                'id': 'AL01-L02', 'numero': 2, 'x': 1, 'y': 0, 'w': 1, 'd': 2,
+                'id': 'QI01-L02', 'numero': '2', 'poly': [[1, 0], [2, 0], [2, 2], [1, 2]],
                 'status': 'sem_acesso', 'visita': null,
               },
             ],
@@ -238,7 +238,8 @@ void main() {
       expect(q.achados.larvas, 10);
       expect(q.resumo.progresso, 1.0);
       expect(q.lotes.last.status, LoteStatus.semAcesso);
-      expect(q.conjuntoDo(q.lotes.first).nome, 'Alameda 1');
+      expect(q.conjuntoDo(q.lotes.first).titulo, 'QI 01 · Alameda 1');
+      expect(q.conjuntos.first.limites.maxX, 2);
     });
 
     test('registrarVisita só envia números quando visitado', () async {
@@ -249,20 +250,20 @@ void main() {
         httpClient: MockClient((req) async {
           bodies.add(jsonDecode(req.body) as Map<String, dynamic>);
           return jsonResponse({
-            'id': 'AL01-L01', 'numero': 1, 'x': 0, 'y': 0, 'w': 1, 'd': 2,
+            'id': 'QI01-L01', 'numero': '1', 'poly': [[0, 0], [1, 0], [1, 2], [0, 2]],
             'status': 'visitado', 'visita': null,
           });
         }),
       );
       await core.quadras.registrarVisita(
         quadraId: '1106',
-        loteId: 'AL01-L01',
+        loteId: 'QI01-L01',
         resultado: ResultadoVisita.visitado,
         achados: const Achados(criadouros: 1, larvas: 4),
       );
       await core.quadras.registrarVisita(
         quadraId: '1106',
-        loteId: 'AL01-L02',
+        loteId: 'QI01-L02',
         resultado: ResultadoVisita.recusado,
         achados: const Achados(criadouros: 9),
       );

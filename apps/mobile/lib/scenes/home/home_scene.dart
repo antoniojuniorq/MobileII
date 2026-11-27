@@ -76,7 +76,8 @@ class _HomeSceneState extends State<HomeScene> {
     if (!mounted) return;
     setState(() => _selectedLote = null);
     if (saved == true) {
-      AceSnackbar.show(context, 'Visita do lote ${lote.numero} registrada', type: AceFeedback.success);
+      AceSnackbar.show(context, 'Visita do lote ${lote.numero} registrada',
+          type: AceFeedback.success);
     }
   }
 
@@ -109,7 +110,8 @@ class _HomeSceneState extends State<HomeScene> {
           onSeeAll: () => setState(() => _tab = 2),
           onChangeQuadra: () => goToQuadraPicker(context, widget.core),
         ),
-      1 => QuadraMapView(quadra: q, selectedLoteId: _selectedLote, onLoteTap: _openLote),
+      1 => QuadraMapView(
+          quadra: q, selectedLoteId: _selectedLote, onLoteTap: _openLote),
       2 => VisitsTab(quadra: q, onOpenLote: _openLote),
       _ => ProfileTab(
           agent: _vm.agent!,
@@ -129,12 +131,16 @@ class _HomeSceneState extends State<HomeScene> {
           builder: (context, _) => Text(_vm.quadra?.nome ?? 'ACE CONTROL'),
         ),
       ),
-      body: ListenableBuilder(listenable: _vm, builder: (context, _) => _body()),
+      body:
+          ListenableBuilder(listenable: _vm, builder: (context, _) => _body()),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Início'),
+          NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home),
+              label: 'Início'),
           NavigationDestination(
             icon: Icon(Icons.view_in_ar_outlined),
             selectedIcon: Icon(Icons.view_in_ar),
@@ -145,7 +151,10 @@ class _HomeSceneState extends State<HomeScene> {
             selectedIcon: Icon(Icons.fact_check),
             label: 'Visitas',
           ),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Perfil'),
+          NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person),
+              label: 'Perfil'),
         ],
       ),
     );

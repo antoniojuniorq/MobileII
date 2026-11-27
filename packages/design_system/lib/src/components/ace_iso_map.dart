@@ -6,72 +6,43 @@ import '../theme/ace_theme.dart';
 import '../tokens/ace_spacing.dart';
 import '../tokens/ace_status.dart';
 
-/// Um lote no mapa. Medidas em testadas de lote; x cresce para leste, y para sul.
+/// Um lote no mapa: o contorno da planta (x para leste, y para sul).
 @immutable
 class AceIsoLot {
   const AceIsoLot({
     required this.id,
-    required this.x,
-    required this.y,
-    required this.w,
-    required this.d,
+    required this.polygon,
     required this.status,
     required this.label,
   });
 
   final String id;
-  final double x;
-  final double y;
-  final double w;
-  final double d;
+  final List<Offset> polygon;
   final AceLotStatus status;
 
-  /// Número mostrado sobre a casa quando o mapa está aproximado.
+  /// Número mostrado sobre o bloco quando o mapa está aproximado.
   final String label;
 }
 
-/// Um grupo de lotes (conjunto voltado para a mesma alameda).
+/// Um grupo de lotes (quadra interna) para aproximar de uma vez.
 @immutable
 class AceIsoGroup {
-  const AceIsoGroup({
-    required this.id,
-    required this.label,
-    required this.x,
-    required this.y,
-    required this.w,
-    required this.h,
-  });
+  const AceIsoGroup({required this.id, required this.label, required this.bounds});
 
   final String id;
   final String label;
-  final double x;
-  final double y;
-  final double w;
-  final double h;
-
-  bool contains(Offset p) =>
-      p.dx >= x && p.dx <= x + w && p.dy >= y && p.dy <= y + h;
+  final Rect bounds;
 }
 
 enum AceIsoAreaKind { park, building }
 
-/// Área sem lotes: praça (árvores) ou equipamento público (prédio).
+/// Área sem lotes: praça (verde, plana) ou equipamento público (bloco baixo).
 @immutable
 class AceIsoArea {
-  const AceIsoArea({
-    required this.label,
-    required this.x,
-    required this.y,
-    required this.w,
-    required this.h,
-    required this.kind,
-  });
+  const AceIsoArea({required this.label, required this.polygon, required this.kind});
 
   final String label;
-  final double x;
-  final double y;
-  final double w;
-  final double h;
+  final List<Offset> polygon;
   final AceIsoAreaKind kind;
 }
 
@@ -95,11 +66,12 @@ class AceIsoMapController extends ChangeNotifier {
   }
 }
 
-/// Mapa 3D (projeção ortográfica inclinada, norte para cima) da quadra.
+/// Mapa 3D da quadra, fiel à planta: cada lote é o seu contorno levantado como
+/// um bloco liso, pintado pela situação (vermelho, verde ou cinza).
 ///
-/// Cada lote vira uma casa com telhado de duas águas pintada pela situação do
-/// lote. Pinça e arrasto aproximam. Com o mapa afastado, tocar num conjunto
-/// aproxima o conjunto; aproximado, tocar numa casa chama [onLotTap].
+/// Vista inclinada com o norte para cima, como a planta da Prefeitura. Pinça e
+/// arrasto aproximam. Afastado, tocar num conjunto aproxima o conjunto;
+/// aproximado, tocar num bloco chama [onLotTap].
 class AceIsoMap extends StatefulWidget {
   const AceIsoMap({
     super.key,
@@ -113,9 +85,8 @@ class AceIsoMap extends StatefulWidget {
     this.onGroupFocused,
     this.controller,
     this.interactive = true,
-    this.semanticLabel = 'Mapa 3D da quadra',
-    this.dark,
     this.showLabels = true,
+    this.semanticLabel = 'Mapa 3D da quadra',
   });
 
   final List<AceIsoLot> lots;
@@ -130,13 +101,10 @@ class AceIsoMap extends StatefulWidget {
 
   /// `false` desenha só a imagem (sem toque, pinça ou arrasto).
   final bool interactive;
-  final String semanticLabel;
 
-  /// Força o chão escuro (ex.: sobre o verde da marca). Padrão: tema atual.
-  final bool? dark;
-
-  /// Números das casas e nomes das alamedas ao aproximar.
+  /// Números dos lotes e nomes dos conjuntos ao aproximar.
   final bool showLabels;
+  final String semanticLabel;
 
   @override
   State<AceIsoMap> createState() => _AceIsoMapState();
@@ -146,26 +114,20 @@ class _AceIsoMapState extends State<AceIsoMap> with TickerProviderStateMixin {
   final _transform = TransformationController();
   late final AnimationController _grow = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 900),
+    duration: const Duration(milliseconds: 700),
   );
   late final AnimationController _fly = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 420),
   );
   Animation<Matrix4>? _flight;
-  _IsoProjection? _proj;
+  _Scene? _scene;
   Size _viewport = Size.zero;
+  Object? _sceneKey;
 
-  /// Canto do mapa dentro da área do InteractiveViewer (o mapa fica centrado).
-  Offset get _mapOffset {
-    final p = _proj;
-    if (p == null) return Offset.zero;
-    return Offset((_viewport.width - p.size.width) / 2,
-        (_viewport.height - p.size.height) / 2);
-  }
-
-  /// Telas abaixo deste tamanho de lote (px) tocam no conjunto, não na casa.
-  static const _tapLotMinPx = 18.0;
+  /// Abaixo desta largura de lote na tela (px), o toque aproxima o conjunto.
+  static const _tapLotMinPx = 22.0;
+  static const _maxScale = 14.0;
 
   @override
   void initState() {
@@ -200,6 +162,12 @@ class _AceIsoMapState extends State<AceIsoMap> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  Offset get _mapOffset {
+    final s = _scene;
+    if (s == null) return Offset.zero;
+    return Offset((_viewport.width - s.size.width) / 2, (_viewport.height - s.size.height) / 2);
+  }
+
   void _onController() {
     final c = widget.controller!;
     if (c._reset) {
@@ -223,86 +191,81 @@ class _AceIsoMapState extends State<AceIsoMap> with TickerProviderStateMixin {
   }
 
   void _focus(AceIsoGroup g) {
-    final p = _proj;
-    if (p == null || _viewport.isEmpty) return;
-    final r = p
-        .groundRect(g.x - 0.6, g.y - 0.6, g.w + 1.2, g.h + 1.2, lift: 1.3)
-        .shift(_mapOffset);
-    final s = math
-        .min(_viewport.width / r.width, _viewport.height / r.height)
-        .clamp(1.0, _maxScale);
-    final tx = _viewport.width / 2 - r.center.dx * s;
-    final ty = _viewport.height / 2 - r.center.dy * s;
+    final s = _scene;
+    if (s == null || _viewport.isEmpty) return;
+    final r = s.proj.screenRect(g.bounds.inflate(4), lift: _Scene.height).shift(_mapOffset);
+    final k = math.min(_viewport.width / r.width, _viewport.height / r.height).clamp(1.0, _maxScale);
+    final tx = _viewport.width / 2 - r.center.dx * k;
+    final ty = _viewport.height / 2 - r.center.dy * k;
     _flyTo(Matrix4.identity()
       ..translateByDouble(tx, ty, 0, 1)
-      ..scaleByDouble(s, s, 1, 1));
+      ..scaleByDouble(k, k, 1, 1));
     widget.onGroupFocused?.call(g);
   }
-
-  double get _maxScale => 10;
 
   double get _zoom => _transform.value.getMaxScaleOnAxis();
 
   void _onTapUp(TapUpDetails d) {
-    final p = _proj;
-    if (p == null) return;
-    final pxPerLot = p.k * _zoom;
-    if (pxPerLot >= _tapLotMinPx) {
-      final lot = p.hitLot(d.localPosition, _grow.value);
+    final s = _scene;
+    if (s == null) return;
+    if (s.typicalLotPx * _zoom >= _tapLotMinPx) {
+      final lot = s.hitLot(d.localPosition, _grow.value);
       if (lot != null) {
         widget.onLotTap?.call(lot);
         return;
       }
     }
-    final ground = p.toGround(d.localPosition);
-    final g = widget.groups.where((g) => g.contains(ground)).firstOrNull;
+    final ground = s.proj.toGround(d.localPosition);
+    final g = widget.groups.where((g) => g.bounds.inflate(2).contains(ground)).firstOrNull;
     if (g != null) _focus(g);
+  }
+
+  _Scene _sceneFor(Size viewport) {
+    final key = (viewport, widget.lots, widget.areas, widget.worldWidth, widget.worldHeight);
+    if (_scene == null || _sceneKey != key) {
+      _scene = _Scene.build(
+        lots: widget.lots,
+        areas: widget.areas,
+        worldW: widget.worldWidth,
+        worldH: widget.worldHeight,
+        viewport: viewport,
+      );
+      _sceneKey = key;
+    }
+    return _scene!;
   }
 
   @override
   Widget build(BuildContext context) {
-    final dark = widget.dark ?? Theme.of(context).brightness == Brightness.dark;
-    final palette = _IsoPalette(
-      dark: dark,
-      ink: dark ? const Color(0xFFE8EFEC) : const Color(0xFF12201D),
-    );
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final palette = _Palette(dark: dark, ink: context.colors.onSurface, accent: context.colors.primary);
     return Semantics(
       label: widget.semanticLabel,
       child: LayoutBuilder(
         builder: (context, box) {
           _viewport = box.biggest;
-          final proj = _IsoProjection.fit(
-            lots: widget.lots,
-            areas: widget.areas,
-            worldW: widget.worldWidth,
-            worldH: widget.worldHeight,
-            viewport: box.biggest,
-          );
-          _proj = proj;
-
+          final scene = _sceneFor(box.biggest);
           final map = SizedBox(
-            width: proj.size.width,
-            height: proj.size.height,
+            width: scene.size.width,
+            height: scene.size.height,
             child: Stack(
               children: [
                 RepaintBoundary(
-                  child: CustomPaint(
-                    size: proj.size,
-                    painter: _GeometryPainter(proj, palette, _grow),
-                  ),
+                  child: CustomPaint(size: scene.size, painter: _BlocksPainter(scene, palette, _grow)),
                 ),
                 if (widget.showLabels || widget.selectedLotId != null)
                   CustomPaint(
-                    size: proj.size,
+                    size: scene.size,
                     painter: _OverlayPainter(
-                      proj,
-                      palette,
-                      _transform,
-                      _grow,
-                      widget.selectedLotId,
-                      widget.groups,
-                      context.text,
-                      box.biggest,
+                      scene: scene,
+                      palette: palette,
+                      transform: _transform,
+                      grow: _grow,
+                      selectedId: widget.selectedLotId,
+                      groups: widget.showLabels ? widget.groups : const [],
+                      showLotLabels: widget.showLabels,
+                      text: context.text,
+                      viewport: box.biggest,
                     ),
                   ),
               ],
@@ -321,11 +284,7 @@ class _AceIsoMapState extends State<AceIsoMap> with TickerProviderStateMixin {
               width: box.maxWidth,
               height: box.maxHeight,
               child: Center(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapUp: _onTapUp,
-                  child: map,
-                ),
+                child: GestureDetector(behavior: HitTestBehavior.opaque, onTapUp: _onTapUp, child: map),
               ),
             ),
           );
@@ -335,56 +294,135 @@ class _AceIsoMapState extends State<AceIsoMap> with TickerProviderStateMixin {
   }
 }
 
-// ------------------------------------------------------------ projeção 3D
+// ------------------------------------------------------------------ cena 3D
 
-class _IsoPalette {
-  _IsoPalette({required this.dark, required this.ink});
+class _Palette {
+  _Palette({required this.dark, required this.ink, required this.accent});
   final bool dark;
   final Color ink;
+  final Color accent;
 
-  Color get ground => dark ? const Color(0xFF1C2623) : const Color(0xFFE9ECE6);
-  Color get sidewalk =>
-      dark ? const Color(0xFF26322E) : const Color(0xFFF7F8F4);
-  Color get yardLine =>
-      dark ? const Color(0xFF34433E) : const Color(0xFFD3D9D2);
-  Color get park => dark ? const Color(0xFF1F3E2E) : const Color(0xFFCFE6C8);
-  Color get tree => dark ? const Color(0xFF3F8A5F) : const Color(0xFF3E8F5A);
-  Color get building =>
-      dark ? const Color(0xFF6F7C78) : const Color(0xFFD9D2C3);
-  Color get labelBg => dark ? const Color(0xE6121A17) : const Color(0xF2FFFFFF);
+  Color get ground => dark ? const Color(0xFF16242A) : const Color(0xFFE6ECEE);
+  Color get block => dark ? const Color(0xFF1E3038) : const Color(0xFFF7F9FA);
+  Color get park => dark ? const Color(0xFF1D3B30) : const Color(0xFFD3E8D6);
+  Color get parkLine => dark ? const Color(0xFF2D5545) : const Color(0xFFB2D4B8);
+  Color get building => dark ? const Color(0xFF3A4B53) : const Color(0xFFCFD8DC);
+  Color get labelBg => dark ? const Color(0xE6101B20) : const Color(0xF2FFFFFF);
 }
 
-/// Projeção ortográfica: giro (yaw) e inclinação (tilt) da câmera.
-class _IsoProjection {
-  _IsoProjection._(this.k, this.origin, this.size, this.houses, this.areas,
-      this.worldW, this.worldH);
+/// Projeção ortográfica inclinada (norte para cima).
+class _Proj {
+  _Proj(this.k, this.origin);
 
-  static const yaw = 0.2; // ~11°: norte quase para cima, fachada leste visível
-  static const tilt = 0.74; // ~42° a partir da vista de cima
-  static final _ca = math.cos(yaw), _sa = math.sin(yaw);
-  static final _ct = math.cos(tilt), _st = math.sin(tilt);
+  static const yaw = 0.16; // giro leve: aparece a face leste dos blocos
+  static const tilt = 0.72; // ~41° a partir da vista de cima
+  static final ca = math.cos(yaw), sa = math.sin(yaw);
+  static final ct = math.cos(tilt), st = math.sin(tilt);
+  static final toCamera = (x: sa * st, y: ca * st, z: ct);
 
-  /// Direção para a câmera (para descartar faces de trás).
-  static final toCamera = _V3(_sa * _st, _ca * _st, _ct);
-
-  /// Luz vinda do noroeste, do alto.
-  static final light = _V3(-0.35, -0.55, 1).normalized();
-
-  final double k; // px por testada de lote, sem zoom
+  final double k;
   final Offset origin;
+
+  static Offset raw(double x, double y, double z) {
+    final u = x * ca - y * sa;
+    final v = x * sa + y * ca;
+    return Offset(u, v * ct - z * st);
+  }
+
+  static double depth(double x, double y) => x * sa + y * ca;
+
+  Offset p(double x, double y, [double z = 0]) => origin + raw(x, y, z) * k;
+
+  Offset toGround(Offset s) {
+    final u = (s.dx - origin.dx) / k;
+    final v = (s.dy - origin.dy) / (k * ct);
+    return Offset(ca * u + sa * v, -sa * u + ca * v);
+  }
+
+  Rect screenRect(Rect world, {double lift = 0}) {
+    final pts = [
+      p(world.left, world.top), p(world.right, world.top),
+      p(world.left, world.bottom), p(world.right, world.bottom),
+      p(world.left, world.top, lift), p(world.right, world.top, lift),
+    ];
+    return _bounds(pts);
+  }
+
+  Path polygon(List<Offset> pts, [double z = 0]) =>
+      Path()..addPolygon([for (final q in pts) p(q.dx, q.dy, z)], true);
+}
+
+Rect _bounds(List<Offset> pts) {
+  var r = Rect.fromLTRB(pts.first.dx, pts.first.dy, pts.first.dx, pts.first.dy);
+  for (final q in pts) {
+    r = r.expandToInclude(Rect.fromLTRB(q.dx, q.dy, q.dx, q.dy));
+  }
+  return r;
+}
+
+/// Um bloco: o contorno do lote encolhido um pouco (vão entre lotes) e levantado.
+class _Block {
+  _Block(this.lot) {
+    final pts = lot.polygon;
+    final c = pts.fold(Offset.zero, (a, b) => a + b) / pts.length.toDouble();
+    center = c;
+    // encolhe em direção ao centro para separar os blocos vizinhos
+    base = [
+      for (final q in pts)
+        q + (c - q) * math.min(0.22, _Scene.gap / math.max(0.01, (c - q).distance)),
+    ];
+    depth = _Proj.depth(c.dx, c.dy);
+    final b = _bounds(pts);
+    size = math.min(b.width, b.height);
+  }
+
+  final AceIsoLot lot;
+  late final Offset center;
+  late final List<Offset> base;
+  late final double depth;
+  late final double size;
+
+  /// Entrada: os blocos sobem de trás para a frente, uma vez.
+  double rise(double t, double maxDepth) {
+    final delay = (depth / math.max(1, maxDepth)).clamp(0.0, 1.0) * 0.4;
+    return Curves.easeOutCubic.transform(((t - delay) / 0.6).clamp(0.0, 1.0));
+  }
+
+  /// Paredes voltadas para a câmera (normal para fora do contorno convexo).
+  Iterable<(List<Offset>, double)> walls() sync* {
+    for (var i = 0; i < base.length; i++) {
+      final a = base[i];
+      final b = base[(i + 1) % base.length];
+      final e = b - a;
+      if (e.distance < 0.01) continue;
+      var n = Offset(e.dy, -e.dx) / e.distance;
+      final mid = (a + b) / 2;
+      if ((mid - center).dx * n.dx + (mid - center).dy * n.dy < 0) n = -n;
+      final facing = n.dx * _Proj.toCamera.x + n.dy * _Proj.toCamera.y;
+      if (facing > 0.001) yield ([a, b], facing);
+    }
+  }
+}
+
+class _Scene {
+  _Scene._(this.proj, this.size, this.blocks, this.areas, this.worldW, this.worldH, this.maxDepth,
+      this.typicalLot);
+
+  static const height = 3.2; // altura do bloco (unidade da planta)
+  static const gap = 0.45; // vão entre lotes vizinhos
+
+  final _Proj proj;
   final Size size;
-  final List<_House> houses;
+  final List<_Block> blocks;
   final List<AceIsoArea> areas;
   final double worldW;
   final double worldH;
+  final double maxDepth;
+  final double typicalLot;
 
-  static Offset _raw(double x, double y, double z) {
-    final u = x * _ca - y * _sa;
-    final v = x * _sa + y * _ca;
-    return Offset(u, v * _ct - z * _st);
-  }
+  double get typicalLotPx => typicalLot * proj.k;
 
-  factory _IsoProjection.fit({
+  factory _Scene.build({
     required List<AceIsoLot> lots,
     required List<AceIsoArea> areas,
     required double worldW,
@@ -392,405 +430,226 @@ class _IsoProjection {
     required Size viewport,
   }) {
     final corners = [
-      _raw(0, 0, 0),
-      _raw(worldW, 0, 0),
-      _raw(0, worldH, 0),
-      _raw(worldW, worldH, 0),
-      _raw(0, 0, 2),
-      _raw(worldW, 0, 2),
+      _Proj.raw(0, 0, 0), _Proj.raw(worldW, 0, 0), _Proj.raw(0, worldH, 0),
+      _Proj.raw(worldW, worldH, 0), _Proj.raw(0, 0, height), _Proj.raw(worldW, 0, height),
     ];
-    var b = Rect.fromPoints(corners[0], corners[1]);
-    for (final c in corners) {
-      b = b.expandToInclude(Rect.fromCenter(center: c, width: 0, height: 0));
-    }
-    const pad = 12.0;
+    final b = _bounds(corners);
+    const pad = 10.0;
     final w = viewport.width.isFinite ? viewport.width : 360.0;
     final h = viewport.height.isFinite ? viewport.height : 480.0;
-    final k = math.max(
-      1.0,
-      math.min((w - pad * 2) / b.width, (h - pad * 2) / b.height),
-    );
+    final k = math.max(0.05, math.min((w - pad * 2) / b.width, (h - pad * 2) / b.height));
     final size = Size(b.width * k + pad * 2, b.height * k + pad * 2);
     final origin = Offset(pad - b.left * k, pad - b.top * k);
-
-    final houses = [for (final l in lots) _House(l)]
+    final blocks = [for (final l in lots) if (l.polygon.length >= 3) _Block(l)]
       ..sort((a, b) => a.depth.compareTo(b.depth));
-    return _IsoProjection._(k, origin, size, houses, areas, worldW, worldH);
+    final sizes = blocks.map((b) => b.size).toList()..sort();
+    final typical = sizes.isEmpty ? 1.0 : sizes[sizes.length ~/ 2];
+    final maxDepth = blocks.isEmpty ? 1.0 : blocks.last.depth;
+    return _Scene._(_Proj(k, origin), size, blocks, areas, worldW, worldH, maxDepth, typical);
   }
-
-  Offset p(double x, double y, double z) => origin + _raw(x, y, z) * k;
-
-  /// Ponto da tela (sem zoom) de volta para o chão (z = 0).
-  Offset toGround(Offset s) {
-    final u = (s.dx - origin.dx) / k;
-    final v = (s.dy - origin.dy) / (k * _ct);
-    return Offset(_ca * u + _sa * v, -_sa * u + _ca * v);
-  }
-
-  Rect groundRect(double x, double y, double w, double h, {double lift = 0}) {
-    final pts = [
-      p(x, y, 0),
-      p(x + w, y, 0),
-      p(x, y + h, 0),
-      p(x + w, y + h, 0),
-      p(x, y, lift),
-      p(x + w, y, lift),
-    ];
-    var r = Rect.fromPoints(pts[0], pts[1]);
-    for (final q in pts) {
-      r = r.expandToInclude(Rect.fromCenter(center: q, width: 0, height: 0));
-    }
-    return r;
-  }
-
-  Path quad(double x, double y, double w, double h, [double z = 0]) => Path()
-    ..addPolygon(
-        [p(x, y, z), p(x + w, y, z), p(x + w, y + h, z), p(x, y + h, z)], true);
 
   AceIsoLot? hitLot(Offset s, double grow) {
-    for (final h in houses.reversed) {
-      if (h.outline(this, h.growAt(grow)).contains(s)) return h.lot;
-      if (quad(h.lot.x, h.lot.y, h.lot.w, h.lot.d).contains(s)) return h.lot;
+    for (final b in blocks.reversed) {
+      final z = height * b.rise(grow, maxDepth);
+      if (proj.polygon(b.base, z).contains(s) || proj.polygon(b.base).contains(s)) return b.lot;
+      for (final (w, _) in b.walls()) {
+        final path = Path()
+          ..addPolygon([
+            proj.p(w[0].dx, w[0].dy), proj.p(w[1].dx, w[1].dy),
+            proj.p(w[1].dx, w[1].dy, z), proj.p(w[0].dx, w[0].dy, z),
+          ], true);
+        if (path.contains(s)) return b.lot;
+      }
     }
     return null;
   }
 }
 
-class _V3 {
-  const _V3(this.x, this.y, this.z);
-  final double x, y, z;
-  double dot(_V3 o) => x * o.x + y * o.y + z * o.z;
-  _V3 normalized() {
-    final l = math.sqrt(x * x + y * y + z * z);
-    return _V3(x / l, y / l, z / l);
-  }
-}
+Color _shade(Color c, double f) => Color.from(alpha: 1, red: c.r * f, green: c.g * f, blue: c.b * f);
 
-class _Face {
-  const _Face(this.points, this.normal, this.isRoof);
-  final List<(double, double, double)> points;
-  final _V3 normal;
-  final bool isRoof;
-}
+class _BlocksPainter extends CustomPainter {
+  _BlocksPainter(this.scene, this.palette, this.grow) : super(repaint: grow);
 
-/// Casa sobre o lote: caixa + telhado de duas águas (cumeeira no lado maior).
-class _House {
-  _House(this.lot)
-      : depth = (lot.x + lot.w / 2) * _IsoProjection._sa +
-            (lot.y + lot.d / 2) * _IsoProjection._ca;
-
-  final AceIsoLot lot;
-  final double depth;
-
-  static const _inset = 0.14;
-  static const _wall = 0.62;
-  static const _roof = 0.34;
-
-  /// Entrada: as casas sobem de trás para a frente, uma vez.
-  double growAt(double t) {
-    final delay = (depth / 70).clamp(0.0, 1.0) * 0.45;
-    return Curves.easeOutBack.transform(((t - delay) / 0.55).clamp(0.0, 1.0));
-  }
-
-  List<_Face> faces(double g) {
-    final x0 = lot.x + _inset, x1 = lot.x + lot.w - _inset;
-    final y0 = lot.y + _inset, y1 = lot.y + lot.d - _inset;
-    final h = _wall * g, top = (_wall + _roof) * g;
-    final alongX = (x1 - x0) >= (y1 - y0);
-    if (alongX) {
-      final ym = (y0 + y1) / 2;
-      final run = ym - y0;
-      return [
-        _Face([(x0, y0, 0), (x1, y0, 0), (x1, y0, h), (x0, y0, h)],
-            const _V3(0, -1, 0), false),
-        _Face([(x1, y1, 0), (x0, y1, 0), (x0, y1, h), (x1, y1, h)],
-            const _V3(0, 1, 0), false),
-        _Face(
-            [(x0, y1, 0), (x0, y0, 0), (x0, y0, h), (x0, ym, top), (x0, y1, h)],
-            const _V3(-1, 0, 0),
-            false),
-        _Face(
-            [(x1, y0, 0), (x1, y1, 0), (x1, y1, h), (x1, ym, top), (x1, y0, h)],
-            const _V3(1, 0, 0),
-            false),
-        _Face([(x0, y0, h), (x1, y0, h), (x1, ym, top), (x0, ym, top)],
-            _V3(0, -_roof, run).normalized(), true),
-        _Face([(x1, y1, h), (x0, y1, h), (x0, ym, top), (x1, ym, top)],
-            _V3(0, _roof, run).normalized(), true),
-      ];
-    }
-    final xm = (x0 + x1) / 2;
-    final run = xm - x0;
-    return [
-      _Face([(x0, y1, 0), (x0, y0, 0), (x0, y0, h), (x0, y1, h)],
-          const _V3(-1, 0, 0), false),
-      _Face([(x1, y0, 0), (x1, y1, 0), (x1, y1, h), (x1, y0, h)],
-          const _V3(1, 0, 0), false),
-      _Face([(x0, y0, 0), (x1, y0, 0), (x1, y0, h), (xm, y0, top), (x0, y0, h)],
-          const _V3(0, -1, 0), false),
-      _Face([(x1, y1, 0), (x0, y1, 0), (x0, y1, h), (xm, y1, top), (x1, y1, h)],
-          const _V3(0, 1, 0), false),
-      _Face([(x0, y1, h), (x0, y0, h), (xm, y0, top), (xm, y1, top)],
-          _V3(-_roof, 0, run).normalized(), true),
-      _Face([(x1, y0, h), (x1, y1, h), (xm, y1, top), (xm, y0, top)],
-          _V3(_roof, 0, run).normalized(), true),
-    ];
-  }
-
-  Iterable<_Face> visible(double g) =>
-      faces(g).where((f) => f.normal.dot(_IsoProjection.toCamera) > 0.001);
-
-  Path outline(_IsoProjection p, double g) {
-    final path = Path();
-    for (final f in visible(g)) {
-      path.addPolygon([for (final (x, y, z) in f.points) p.p(x, y, z)], true);
-    }
-    return path;
-  }
-
-  Offset labelAnchor(_IsoProjection p, double g) =>
-      p.p(lot.x + lot.w / 2, lot.y + lot.d / 2, (_wall + _roof) * g + 0.15);
-}
-
-Color _shade(Color c, _V3 n) {
-  final lit = n.dot(_IsoProjection.light).clamp(0.0, 1.0);
-  final f = 0.62 + 0.38 * lit;
-  return Color.from(alpha: 1, red: c.r * f, green: c.g * f, blue: c.b * f);
-}
-
-// --------------------------------------------------------------- pintores
-
-class _GeometryPainter extends CustomPainter {
-  _GeometryPainter(this.proj, this.palette, this.grow) : super(repaint: grow);
-
-  final _IsoProjection proj;
-  final _IsoPalette palette;
+  final _Scene scene;
+  final _Palette palette;
   final Animation<double> grow;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final p = proj;
+    final s = scene;
+    final p = s.proj;
     final fill = Paint()..isAntiAlias = true;
-    final line = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(0.5, p.k * 0.035)
-      ..color = palette.yardLine;
 
-    // Chão da quadra e calçadas
+    // chão da quadra
     canvas.drawPath(
-      p.quad(-0.8, -0.8, p.worldW + 1.6, p.worldH + 1.6),
+      p.polygon([const Offset(-4, -4), Offset(s.worldW + 4, -4), Offset(s.worldW + 4, s.worldH + 4),
+        Offset(-4, s.worldH + 4)]),
       fill..color = palette.ground,
     );
-    canvas.drawPath(
-        p.quad(0, 0, p.worldW, p.worldH), fill..color = palette.sidewalk);
 
-    // Áreas livres (praça, escola, igreja)
-    for (final a in p.areas) {
-      final park = a.kind == AceIsoAreaKind.park;
-      canvas.drawPath(p.quad(a.x, a.y, a.w, a.h),
-          fill..color = park ? palette.park : palette.ground);
-      if (park) {
-        _trees(canvas, a, g: grow.value);
+    // áreas livres: praça plana, equipamento como bloco baixo neutro
+    for (final a in s.areas) {
+      if (a.polygon.length < 3) continue;
+      if (a.kind == AceIsoAreaKind.park) {
+        canvas.drawPath(p.polygon(a.polygon), fill..color = palette.park);
+        canvas.drawPath(
+          p.polygon(a.polygon),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = math.max(0.5, p.k * 0.25)
+            ..color = palette.parkLine,
+        );
       } else {
-        _building(canvas, a, g: grow.value);
+        final blk = _Block(AceIsoLot(id: a.label, polygon: a.polygon, status: AceLotStatus.semAcesso, label: ''));
+        _drawPrism(canvas, blk, _Scene.height * 0.6 * grow.value, palette.building, null);
       }
     }
 
-    // Quintais (o chão do lote já mostra a cor da situação)
-    for (final h in p.houses) {
-      final yard = Color.lerp(
-          palette.sidewalk, h.lot.status.color, palette.dark ? 0.32 : 0.22)!;
-      final q = p.quad(h.lot.x, h.lot.y, h.lot.w, h.lot.d);
-      canvas.drawPath(q, fill..color = yard);
-      canvas.drawPath(q, line);
+    // calçada: pegada clara de cada lote (lê o desenho da quadra mesmo sem altura)
+    for (final b in s.blocks) {
+      canvas.drawPath(p.polygon(b.lot.polygon), fill..color = palette.block);
     }
 
-    // Casas, de trás para a frente
+    // blocos, de trás para a frente
+    for (final b in s.blocks) {
+      final r = b.rise(grow.value, s.maxDepth);
+      if (r <= 0.01) continue;
+      _drawPrism(canvas, b, _Scene.height * r, b.lot.status.color, b.lot.status);
+    }
+  }
+
+  void _drawPrism(Canvas canvas, _Block b, double z, Color top, AceLotStatus? status) {
+    final p = scene.proj;
+    final fill = Paint()..isAntiAlias = true;
     final edge = Paint()
       ..style = PaintingStyle.stroke
       ..strokeJoin = StrokeJoin.round
-      ..strokeWidth = math.max(0.4, p.k * 0.03);
-    for (final h in p.houses) {
-      final g = h.growAt(grow.value);
-      if (g <= 0.01) continue;
-      final base = h.lot.status.color;
-      final roof = Color.lerp(base, Colors.black, 0.18)!;
-      final wall = Color.lerp(base, Colors.white, 0.22)!;
-      for (final f in h.visible(g)) {
-        final poly = Path()
-          ..addPolygon([for (final (x, y, z) in f.points) p.p(x, y, z)], true);
-        canvas.drawPath(
-            poly, fill..color = _shade(f.isRoof ? roof : wall, f.normal));
-        canvas.drawPath(
-            poly,
-            edge
-              ..color = Color.lerp(base, Colors.black, 0.45)!
-                  .withValues(alpha: 0.55));
-      }
+      ..strokeWidth = math.max(0.35, p.k * 0.12)
+      ..color = _shade(top, 0.62).withValues(alpha: 0.7);
+    for (final (w, facing) in b.walls()) {
+      final path = Path()
+        ..addPolygon([
+          p.p(w[0].dx, w[0].dy), p.p(w[1].dx, w[1].dy),
+          p.p(w[1].dx, w[1].dy, z), p.p(w[0].dx, w[0].dy, z),
+        ], true);
+      // parede para o sul mais clara que a do leste (luz do noroeste)
+      final f = 0.62 + 0.18 * facing;
+      canvas.drawPath(path, fill..color = _shade(top, f));
     }
-  }
-
-  void _trees(Canvas canvas, AceIsoArea a, {required double g}) {
-    final p = proj;
-    final rnd = math.Random(a.label.hashCode);
-    final canopy = Paint()..color = palette.tree;
-    final shadow = Paint()..color = Colors.black.withValues(alpha: 0.12);
-    final pts = <Offset>[];
-    for (var i = 0; i < (a.w * a.h / 6).round(); i++) {
-      pts.add(Offset(a.x + 0.8 + rnd.nextDouble() * (a.w - 1.6),
-          a.y + 0.8 + rnd.nextDouble() * (a.h - 1.6)));
-    }
-    pts.sort((m, n) => (m.dx * _IsoProjection._sa + m.dy * _IsoProjection._ca)
-        .compareTo(n.dx * _IsoProjection._sa + n.dy * _IsoProjection._ca));
-    for (final t in pts) {
-      final r = p.k * (0.45 + rnd.nextDouble() * 0.25);
-      canvas.drawOval(
-          Rect.fromCenter(
-              center: p.p(t.dx + 0.3, t.dy + 0.2, 0),
-              width: r * 2,
-              height: r * 1.2),
-          shadow);
-      final c = p.p(t.dx, t.dy, 1.1 * g);
-      canvas.drawCircle(c, r, canopy..color = palette.tree);
-      canvas.drawCircle(c - Offset(r * 0.3, r * 0.3), r * 0.45,
-          canopy..color = Color.lerp(palette.tree, Colors.white, 0.18)!);
-    }
-  }
-
-  void _building(Canvas canvas, AceIsoArea a, {required double g}) {
-    final p = proj;
-    final lot = AceIsoLot(
-      id: a.label,
-      x: a.x + 1,
-      y: a.y + 1,
-      w: a.w - 2,
-      d: a.h - 2,
-      status: AceLotStatus.semAcesso,
-      label: '',
-    );
-    final house = _House(lot);
-    final fill = Paint();
-    for (final f in house.visible(g * 1.4)) {
-      final poly = Path()
-        ..addPolygon([for (final (x, y, z) in f.points) p.p(x, y, z)], true);
-      canvas.drawPath(poly, fill..color = _shade(palette.building, f.normal));
-    }
+    final roof = p.polygon(b.base, z);
+    canvas.drawPath(roof, fill..color = top);
+    canvas.drawPath(roof, edge);
   }
 
   @override
-  bool shouldRepaint(_GeometryPainter old) =>
-      old.proj != proj || old.palette.dark != palette.dark;
+  bool shouldRepaint(_BlocksPainter old) => old.scene != scene || old.palette.dark != palette.dark;
 }
 
-/// Números, nomes das alamedas e destaque do lote escolhido.
-/// Repinta a cada zoom; desenha só o que está na tela.
+/// Números, nomes dos conjuntos e destaque do lote escolhido.
 class _OverlayPainter extends CustomPainter {
-  _OverlayPainter(this.proj, this.palette, this.transform, this.grow,
-      this.selectedId, this.groups, this.text, this.viewport)
-      : super(repaint: Listenable.merge([transform, grow]));
+  _OverlayPainter({
+    required this.scene,
+    required this.palette,
+    required this.transform,
+    required this.grow,
+    required this.selectedId,
+    required this.groups,
+    required this.showLotLabels,
+    required this.text,
+    required this.viewport,
+  }) : super(repaint: Listenable.merge([transform, grow]));
 
-  final _IsoProjection proj;
-  final _IsoPalette palette;
+  final _Scene scene;
+  final _Palette palette;
   final TransformationController transform;
   final Animation<double> grow;
   final String? selectedId;
   final List<AceIsoGroup> groups;
+  final bool showLotLabels;
   final TextTheme text;
   final Size viewport;
 
   static final _cache = <String, TextPainter>{};
 
   TextPainter _tp(String s, TextStyle style) {
-    final key = '$s|${style.fontSize}|${style.color}|${style.fontWeight}';
+    final key = '$s|${style.fontSize?.toStringAsFixed(3)}|${style.color}|${style.fontWeight}';
     return _cache.putIfAbsent(
       key,
-      () => TextPainter(
-        text: TextSpan(text: s, style: style),
-        textDirection: TextDirection.ltr,
-      )..layout(),
+      () => TextPainter(text: TextSpan(text: s, style: style), textDirection: TextDirection.ltr)..layout(),
     );
   }
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (_cache.length > 2000) _cache.clear();
+    if (_cache.length > 3000) _cache.clear();
+    final s = scene;
+    final p = s.proj;
     final zoom = transform.value.getMaxScaleOnAxis();
-    final pxPerLot = proj.k * zoom;
     final inv = Matrix4.inverted(transform.value);
-    // área visível em coordenadas do mapa (com folga)
-    final offset = Offset(
-      (viewport.width - size.width) / 2,
-      (viewport.height - size.height) / 2,
-    );
-    final tl = MatrixUtils.transformPoint(inv, Offset.zero) - offset;
-    final br =
-        MatrixUtils.transformPoint(inv, viewport.bottomRight(Offset.zero)) -
-            offset;
-    final view = Rect.fromPoints(tl, br).inflate(40);
-
+    final off = Offset((viewport.width - size.width) / 2, (viewport.height - size.height) / 2);
+    final view = Rect.fromPoints(
+      MatrixUtils.transformPoint(inv, Offset.zero) - off,
+      MatrixUtils.transformPoint(inv, viewport.bottomRight(Offset.zero)) - off,
+    ).inflate(30);
     final g = grow.value;
 
-    // Destaque do lote escolhido
+    // destaque do lote escolhido
     if (selectedId != null) {
-      final h = proj.houses.where((h) => h.lot.id == selectedId).firstOrNull;
-      if (h != null) {
-        final stroke = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeJoin = StrokeJoin.round
-          ..strokeWidth = 3 / zoom
-          ..color = palette.ink;
-        canvas.drawPath(proj.quad(h.lot.x, h.lot.y, h.lot.w, h.lot.d), stroke);
-        canvas.drawPath(h.outline(proj, h.growAt(g)), stroke);
+      final b = s.blocks.where((b) => b.lot.id == selectedId).firstOrNull;
+      if (b != null) {
+        final z = _Scene.height * b.rise(g, s.maxDepth);
+        canvas.drawPath(
+          p.polygon(b.base, z),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeJoin = StrokeJoin.round
+            ..strokeWidth = 3 / zoom
+            ..color = palette.ink,
+        );
       }
     }
 
-    // Números das casas: só com o mapa aproximado
-    if (pxPerLot >= 20 && g > 0.6) {
+    final lotPx = s.typicalLotPx * zoom;
+
+    // números dos lotes: só com o lote grande o bastante na tela
+    if (showLotLabels && lotPx >= 26 && g > 0.6) {
       final style = (text.labelSmall ?? const TextStyle()).copyWith(
-        fontSize: 11 / zoom * math.min(1.6, pxPerLot / 24),
+        fontSize: 11.5 / zoom * math.min(1.5, lotPx / 34),
+        color: Colors.white,
+        fontWeight: FontWeight.w700,
+        height: 1,
+      );
+      for (final b in s.blocks) {
+        final c = p.p(b.center.dx, b.center.dy, _Scene.height * b.rise(g, s.maxDepth));
+        if (!view.contains(c)) continue;
+        final tp = _tp(b.lot.label, style);
+        tp.paint(canvas, c - Offset(tp.width / 2, tp.height / 2));
+      }
+    }
+
+    // nomes dos conjuntos: no meio do caminho entre afastado e perto
+    if (groups.isNotEmpty && lotPx >= 9 && lotPx < 70) {
+      final style = (text.labelSmall ?? const TextStyle()).copyWith(
+        fontSize: 11 / zoom,
         color: palette.ink,
         fontWeight: FontWeight.w700,
         height: 1,
       );
       final bg = Paint()..color = palette.labelBg;
-      for (final h in proj.houses) {
-        final a = h.labelAnchor(proj, h.growAt(g));
-        if (!view.contains(a)) continue;
-        final tp = _tp(h.lot.label, style);
-        final r = RRect.fromRectAndRadius(
-          Rect.fromCenter(
-            center: a - Offset(0, tp.height * 0.6),
-            width: tp.width + 8 / zoom,
-            height: tp.height + 5 / zoom,
-          ),
-          Radius.circular(4 / zoom),
-        );
-        canvas.drawRRect(r, bg);
-        tp.paint(canvas, r.center - Offset(tp.width / 2, tp.height / 2));
-      }
-    }
-
-    // Nomes das alamedas: com o mapa afastado ou médio
-    if (pxPerLot >= 9 && pxPerLot < 60) {
-      final style = (text.labelSmall ?? const TextStyle()).copyWith(
-        fontSize: 10.5 / zoom,
-        color: palette.ink,
-        fontWeight: FontWeight.w600,
-        height: 1,
-      );
-      final bg = Paint()..color = palette.labelBg;
+      final border = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1 / zoom
+        ..color = palette.accent.withValues(alpha: 0.5);
       for (final grp in groups) {
-        final a = proj.p(grp.x + grp.w / 2, grp.y + grp.h + 0.55, 0);
+        final a = p.p(grp.bounds.center.dx, grp.bounds.center.dy, _Scene.height + 1);
         if (!view.contains(a)) continue;
-        final tp = _tp(grp.label.replaceFirst('Alameda ', 'Al. '), style);
+        final tp = _tp(grp.label, style);
         final r = RRect.fromRectAndRadius(
-          Rect.fromCenter(
-              center: a,
-              width: tp.width + 8 / zoom,
-              height: tp.height + 5 / zoom),
+          Rect.fromCenter(center: a, width: tp.width + 10 / zoom, height: tp.height + 7 / zoom),
           Radius.circular(AceRadius.sm / zoom),
         );
         canvas.drawRRect(r, bg);
+        canvas.drawRRect(r, border);
         tp.paint(canvas, r.center - Offset(tp.width / 2, tp.height / 2));
       }
     }
@@ -798,7 +657,5 @@ class _OverlayPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_OverlayPainter old) =>
-      old.selectedId != selectedId ||
-      old.proj != proj ||
-      old.palette.dark != palette.dark;
+      old.selectedId != selectedId || old.scene != scene || old.palette.dark != palette.dark;
 }

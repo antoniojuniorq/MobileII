@@ -3,8 +3,9 @@ import 'package:ace_design_system/ace_design_system.dart';
 import 'package:flutter/material.dart';
 
 import 'lot_presenters.dart';
+import 'lot_visit_view_model.dart';
 
-/// Folha aberta ao tocar numa casa do mapa.
+/// Folha aberta ao tocar num lote do mapa.
 ///
 /// Agente: escolhe Visitado ou Recusado / não atendido; em Visitado preenche
 /// criadouros, larvas, animais e locais com focos. Supervisor ([onSave] nulo):
@@ -21,40 +22,31 @@ class LotVisitSheet extends StatefulWidget {
   final Lote lote;
 
   /// Retorna `null` se salvou, ou a mensagem de erro.
-  final Future<String?> Function(ResultadoVisita resultado, Achados achados)? onSave;
+  final SalvarVisita? onSave;
 
   @override
   State<LotVisitSheet> createState() => _LotVisitSheetState();
 }
 
 class _LotVisitSheetState extends State<LotVisitSheet> {
-  late ResultadoVisita? _resultado = widget.lote.visita?.resultado;
-  late Achados _a = widget.lote.visita?.achados ?? const Achados();
-  bool _saving = false;
-  String? _error;
+  late final _vm = LotVisitViewModel(lote: widget.lote, salvar: widget.onSave);
 
-  bool get _readOnly => widget.onSave == null;
+  @override
+  void initState() {
+    super.initState();
+    _vm.addListener(_onChanged);
+  }
 
-  Future<void> _save() async {
-    final r = _resultado;
-    if (r == null) {
-      setState(() => _error = 'Escolha o resultado da visita.');
-      return;
-    }
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    final error = await widget.onSave!(r, r == ResultadoVisita.visitado ? _a : const Achados());
-    if (!mounted) return;
-    if (error == null) {
-      Navigator.of(context).pop(true);
-    } else {
-      setState(() {
-        _saving = false;
-        _error = error;
-      });
-    }
+  /// Salvou: fecha a folha e avisa quem abriu.
+  void _onChanged() {
+    if (_vm.saved && mounted) Navigator.of(context).pop(true);
+  }
+
+  @override
+  void dispose() {
+    _vm.removeListener(_onChanged);
+    _vm.dispose();
+    super.dispose();
   }
 
   @override
@@ -80,10 +72,12 @@ class _LotVisitSheetState extends State<LotVisitSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Lote ${l.numero}', style: context.text.headlineSmall),
+                      Text('Lote ${l.numero}',
+                          style: context.text.headlineSmall),
                       Text(
-                        '${widget.quadra.conjuntoDo(l).nome} · ${widget.quadra.nome}',
-                        style: context.text.bodyMedium?.copyWith(color: context.ace.textMuted),
+                        '${widget.quadra.conjuntoDo(l).titulo} · ${widget.quadra.nome}',
+                        style: context.text.bodyMedium
+                            ?.copyWith(color: context.ace.textMuted),
                       ),
                     ],
                   ),
@@ -95,11 +89,16 @@ class _LotVisitSheetState extends State<LotVisitSheet> {
               const SizedBox(height: AceSpacing.x2),
               Text(
                 'Registrado às ${v.horario} por ${v.agente}',
-                style: context.text.bodySmall?.copyWith(color: context.ace.textMuted),
+                style: context.text.bodySmall
+                    ?.copyWith(color: context.ace.textMuted),
               ),
             ],
             const SizedBox(height: AceSpacing.x5),
-            if (_readOnly) _readOnlyBody(context) else _editBody(context),
+            if (_vm.readOnly)
+              _readOnlyBody(context)
+            else
+              ListenableBuilder(
+                  listenable: _vm, builder: (context, _) => _editBody(context)),
           ],
         ),
       ),
@@ -124,7 +123,8 @@ class _LotVisitSheetState extends State<LotVisitSheet> {
   }
 
   Widget _editBody(BuildContext context) {
-    final visitado = _resultado == ResultadoVisita.visitado;
+    final vm = _vm;
+    final visitado = vm.visitado;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -142,7 +142,9 @@ class _LotVisitSheetState extends State<LotVisitSheet> {
                   subtitle: 'Casa inspecionada',
                   accent: AceLotStatus.visitado.color,
                   selected: visitado,
-                  onTap: _saving ? null : () => setState(() => _resultado = ResultadoVisita.visitado),
+                  onTap: vm.saving
+                      ? null
+                      : () => vm.escolher(ResultadoVisita.visitado),
                 ),
               ),
               const SizedBox(width: AceSpacing.x3),
@@ -153,8 +155,10 @@ class _LotVisitSheetState extends State<LotVisitSheet> {
                   title: 'Recusado / não atendido',
                   subtitle: 'Volta para recuperar',
                   accent: const Color(0xFF5F6A70),
-                  selected: _resultado == ResultadoVisita.recusado,
-                  onTap: _saving ? null : () => setState(() => _resultado = ResultadoVisita.recusado),
+                  selected: vm.resultado == ResultadoVisita.recusado,
+                  onTap: vm.saving
+                      ? null
+                      : () => vm.escolher(ResultadoVisita.recusado),
                 ),
               ),
             ],
@@ -171,66 +175,60 @@ class _LotVisitSheetState extends State<LotVisitSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('O que foi encontrado', style: context.text.titleMedium),
+                      Text('O que foi encontrado',
+                          style: context.text.titleMedium),
                       const SizedBox(height: AceSpacing.x3),
                       AceCounterField(
                         label: 'Criadouros encontrados',
                         icon: AchadoIcons.criadouros,
-                        value: _a.criadouros,
-                        enabled: !_saving,
-                        onChanged: (n) => setState(() => _a = _copy(criadouros: n)),
+                        value: vm.achados.criadouros,
+                        enabled: !vm.saving,
+                        onChanged: vm.setCriadouros,
                       ),
                       const SizedBox(height: AceSpacing.x2),
                       AceCounterField(
                         label: 'Larvas',
                         icon: AchadoIcons.larvas,
                         max: 9999,
-                        value: _a.larvas,
-                        enabled: !_saving,
-                        onChanged: (n) => setState(() => _a = _copy(larvas: n)),
+                        value: vm.achados.larvas,
+                        enabled: !vm.saving,
+                        onChanged: vm.setLarvas,
                       ),
                       const SizedBox(height: AceSpacing.x2),
                       AceCounterField(
                         label: 'Animais',
                         icon: AchadoIcons.animais,
                         max: 99,
-                        value: _a.animais,
-                        enabled: !_saving,
-                        onChanged: (n) => setState(() => _a = _copy(animais: n)),
+                        value: vm.achados.animais,
+                        enabled: !vm.saving,
+                        onChanged: vm.setAnimais,
                       ),
                       const SizedBox(height: AceSpacing.x2),
                       AceCounterField(
                         label: 'Locais com focos',
                         icon: AchadoIcons.focos,
-                        value: _a.focos,
-                        enabled: !_saving,
-                        onChanged: (n) => setState(() => _a = _copy(focos: n)),
+                        value: vm.achados.focos,
+                        enabled: !vm.saving,
+                        onChanged: vm.setFocos,
                       ),
                     ],
                   ),
                 ),
         ),
-        if (_error != null) ...[
+        if (vm.error != null) ...[
           const SizedBox(height: AceSpacing.x4),
-          AceInlineMessage(message: _error!),
+          AceInlineMessage(message: vm.error!),
         ],
         const SizedBox(height: AceSpacing.x5),
         AceButton(
           label: 'Salvar visita',
           icon: Icons.check,
-          loading: _saving,
-          onPressed: _save,
+          loading: vm.saving,
+          onPressed: vm.salvar,
         ),
       ],
     );
   }
-
-  Achados _copy({int? criadouros, int? larvas, int? animais, int? focos}) => Achados(
-        criadouros: criadouros ?? _a.criadouros,
-        larvas: larvas ?? _a.larvas,
-        animais: animais ?? _a.animais,
-        focos: focos ?? _a.focos,
-      );
 }
 
 /// Os quatro números da visita, em 2 × 2.

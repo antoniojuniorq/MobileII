@@ -8,7 +8,7 @@ enum AceFeedback { success, error, info }
 abstract final class AceSnackbar {
   static void show(BuildContext context, String message, {AceFeedback type = AceFeedback.info}) {
     final (bg, icon) = switch (type) {
-      AceFeedback.success => (AceColors.green800, Icons.check_circle_outline),
+      AceFeedback.success => (AceColors.teal700, Icons.check_circle_outline),
       AceFeedback.error => (AceColors.red600, Icons.error_outline),
       AceFeedback.info => (AceColors.ink900, Icons.info_outline),
     };

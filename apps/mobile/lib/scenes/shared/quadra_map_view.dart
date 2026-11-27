@@ -6,7 +6,7 @@ import 'lot_presenters.dart';
 
 /// Mapa 3D da quadra com legenda e atalhos por alameda.
 ///
-/// Afastado: tocar num conjunto aproxima. Aproximado: tocar numa casa chama
+/// Afastado: tocar num conjunto aproxima. Aproximado: tocar num lote chama
 /// [onLoteTap]. Usado pelo agente (registra) e pelo supervisor (consulta).
 class QuadraMapView extends StatefulWidget {
   const QuadraMapView({
@@ -14,7 +14,8 @@ class QuadraMapView extends StatefulWidget {
     required this.quadra,
     required this.onLoteTap,
     this.selectedLoteId,
-    this.hint = 'Toque num conjunto para aproximar e numa casa para registrar a visita.',
+    this.hint =
+        'Toque num conjunto para aproximar e num lote para registrar a visita.',
   });
 
   final Quadra quadra;
@@ -39,16 +40,32 @@ class _QuadraMapViewState extends State<QuadraMapView> {
   @override
   Widget build(BuildContext context) {
     final q = widget.quadra;
-    final groups = isoGroupsOf(q);
-    final focusedConjunto =
-        _focused == null ? null : q.conjuntos.where((c) => c.id == _focused!.id).firstOrNull;
+    // atalhos: QI 01…47 primeiro, depois QC e a faixa comercial
+    int rank(String nome) => nome.startsWith('QI')
+        ? 0
+        : nome.startsWith('QC')
+            ? 1
+            : 2;
+    final conjuntos = [...q.conjuntos]..sort((a, b) =>
+        rank(a.nome) != rank(b.nome)
+            ? rank(a.nome) - rank(b.nome)
+            : a.nome.compareTo(b.nome));
+    final order = {
+      for (var i = 0; i < conjuntos.length; i++) conjuntos[i].id: i
+    };
+    final groups = isoGroupsOf(q)
+      ..sort((a, b) => order[a.id]!.compareTo(order[b.id]!));
+    final focusedConjunto = _focused == null
+        ? null
+        : q.conjuntos.where((c) => c.id == _focused!.id).firstOrNull;
     final lotsForLegend = focusedConjunto?.lotes ?? q.lotes;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(AceSpacing.page, AceSpacing.x3, AceSpacing.page, 0),
+          padding: const EdgeInsets.fromLTRB(
+              AceSpacing.page, AceSpacing.x3, AceSpacing.page, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -56,7 +73,8 @@ class _QuadraMapViewState extends State<QuadraMapView> {
                 children: [
                   Expanded(
                     child: Text(
-                      focusedConjunto?.nome ?? '${q.nome} · ${q.resumo.totalLotes} lotes',
+                      focusedConjunto?.titulo ??
+                          '${q.nome} · ${q.resumo.totalLotes} lotes',
                       style: context.text.titleMedium,
                     ),
                   ),
@@ -86,7 +104,8 @@ class _QuadraMapViewState extends State<QuadraMapView> {
                   worldHeight: q.altura,
                   selectedLotId: widget.selectedLoteId,
                   onGroupFocused: (g) => setState(() => _focused = g),
-                  onLotTap: (iso) => widget.onLoteTap(q.lotes.firstWhere((l) => l.id == iso.id)),
+                  onLotTap: (iso) => widget
+                      .onLoteTap(q.lotes.firstWhere((l) => l.id == iso.id)),
                   semanticLabel: 'Mapa 3D da ${q.nome}',
                 ),
               ),
@@ -99,7 +118,8 @@ class _QuadraMapViewState extends State<QuadraMapView> {
                     child: Text(
                       widget.hint,
                       textAlign: TextAlign.center,
-                      style: context.text.bodySmall?.copyWith(color: context.ace.textMuted),
+                      style: context.text.bodySmall
+                          ?.copyWith(color: context.ace.textMuted),
                     ),
                   ),
                 ),
@@ -110,20 +130,22 @@ class _QuadraMapViewState extends State<QuadraMapView> {
           height: AceSpacing.touch + AceSpacing.x4,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: AceSpacing.page, vertical: AceSpacing.x2),
+            padding: const EdgeInsets.symmetric(
+                horizontal: AceSpacing.page, vertical: AceSpacing.x2),
             itemCount: groups.length,
             separatorBuilder: (_, __) => const SizedBox(width: AceSpacing.x2),
             itemBuilder: (context, i) {
               final g = groups[i];
-              final c = q.conjuntos[i];
+              final c = conjuntos[i];
               final pend = c.count(LoteStatus.pendente);
               return ChoiceChip(
                 selected: _focused?.id == g.id,
                 showCheckmark: false,
                 avatar: pend == 0
-                    ? Icon(Icons.check_circle, size: 18, color: AceLotStatus.visitado.color)
+                    ? Icon(Icons.check_circle,
+                        size: 18, color: AceLotStatus.visitado.color)
                     : null,
-                label: Text(g.label.replaceFirst('Alameda ', 'Al. ')),
+                label: Text(g.label),
                 onSelected: (_) => _map.focusGroup(g.id),
               );
             },

@@ -141,9 +141,10 @@ void main() {
       expect(field().obscureText, isFalse);
     });
 
-    testWidgets('mapa 3D: tocar numa casa aproximada devolve o lote', (tester) async {
+    testWidgets('mapa 3D: tocar num bloco devolve o lote', (tester) async {
       AceIsoLot? tapped;
-      final ctrl = AceIsoMapController();
+      List<Offset> rect(double x, double y) =>
+          [Offset(x, y), Offset(x + 7, y), Offset(x + 7, y + 13), Offset(x, y + 13)];
       await tester.pumpWidget(MaterialApp(
         theme: AceTheme.light,
         home: Scaffold(
@@ -151,13 +152,12 @@ void main() {
             width: 400,
             height: 400,
             child: AceIsoMap(
-              controller: ctrl,
-              worldWidth: 2,
-              worldHeight: 2,
-              groups: const [AceIsoGroup(id: 'g', label: 'Alameda 1', x: 0, y: 0, w: 2, h: 2)],
-              lots: const [
-                AceIsoLot(id: 'a', x: 0, y: 0, w: 1, d: 2, status: AceLotStatus.pendente, label: '1'),
-                AceIsoLot(id: 'b', x: 1, y: 0, w: 1, d: 2, status: AceLotStatus.visitado, label: '2'),
+              worldWidth: 14,
+              worldHeight: 13,
+              groups: const [AceIsoGroup(id: 'g', label: 'QI 01', bounds: Rect.fromLTWH(0, 0, 14, 13))],
+              lots: [
+                AceIsoLot(id: 'a', polygon: rect(0, 0), status: AceLotStatus.pendente, label: '1'),
+                AceIsoLot(id: 'b', polygon: rect(7, 0), status: AceLotStatus.visitado, label: '2'),
               ],
               onLotTap: (l) => tapped = l,
             ),
@@ -165,12 +165,11 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle();
-      // mapa pequeno já está grande na tela: o toque vai direto para a casa
+      // mapa pequeno já aparece grande na tela: o toque vai direto para o bloco
       final box = tester.getRect(find.byType(GestureDetector).last);
-      await tester.tapAt(box.center + const Offset(40, 0));
+      await tester.tapAt(box.center + Offset(box.width * 0.22, 0));
       await tester.pump();
       expect(tapped?.id, 'b');
-      ctrl.dispose();
     });
 
     testWidgets('legenda mostra a quantidade de cada situação', (tester) async {

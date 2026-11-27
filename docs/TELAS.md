@@ -2,17 +2,19 @@
 
 ## Tema do app
 
-**Conceito "Cerrado"**: verde-folha profundo (marca) e âmbar de sol (acento), neutros levemente
-esverdeados. O app é usado a pé, sob sol forte, muitas vezes com uma mão só.
+**v3 "Frost and slate"** (escolhida pela Taste Skill para serviços de saúde): fundo gelo, tinta
+ardósia e petróleo como cor de ação; Schibsted Grotesk em todo o texto. Vermelho, verde e cinza
+ficam só para a situação dos lotes. O app é usado a pé, sob sol forte, muitas vezes com uma mão só.
 
 | Token | Valor | Uso |
 |---|---|---|
-| Verde 600 | `#1B6B4F` | Cor primária, botões, foco |
-| Verde 800 / 50 | `#0F4A36` / `#E6F3EC` | Textos sobre fundo claro de marca / contêineres |
-| Âmbar sol | `#E8A317` | Acento (uso pontual) |
-| Tinta | `#12201D` | Texto |
-| Névoa | `#F2F5F3` | Fundo das telas |
-| Tipografia | Sora (títulos) + Public Sans (texto) | 12 estilos; mínimo 12 sp |
+| Petróleo 600 | `#0D7480` | Cor de ação, botões, foco |
+| Petróleo 700 / 50 | `#0A5C66` / `#E3F1F2` | Topo do login, textos sobre contêiner / contêineres |
+| Âmbar | `#F2A93B` | Atenção pontual |
+| Ardósia | `#1F3038` | Texto |
+| Gelo | `#F7F9FA` | Fundo das telas |
+| Lote | `#D5432F` / `#239A5E` / `#8E989E` | A visitar / visitado / recusa ou ausente |
+| Tipografia | Schibsted Grotesk | 12 estilos; mínimo 12 sp |
 
 Regras: alvos de toque ≥ 52 dp · bordas em vez de sombras · status sempre com cor + ícone + texto ·
 contraste AA (4.5:1) testado nos temas claro e escuro.
@@ -33,10 +35,10 @@ Painel do supervisor (abas): Painel · Mapa 3D (só leitura) · Perfil
 
 ### Mapa 3D da quadra (`AceIsoMap`)
 
-Cada lote vira uma casa com telhado de duas águas, numa vista inclinada com o norte para cima,
-como a planta da Prefeitura. **Vermelho** = a visitar, **verde** = visitado, **cinza** = recusa
+Cada lote é o contorno real da planta da Prefeitura, levantado como um bloco liso, numa vista
+inclinada com o norte para cima. **Vermelho** = a visitar, **verde** = visitado, **cinza** = recusa
 ou ninguém em casa; a legenda repete cor + ícone + quantidade. Pinça e arrasto aproximam; os
-atalhos "Al. 1, Al. 3…" levam direto ao conjunto. Com o mapa afastado o toque aproxima o
+atalhos "QI 01, QI 02…" levam direto ao conjunto. Com o mapa afastado o toque aproxima o
 conjunto; aproximado, o toque abre o lote (alvo grande o bastante para o dedo).
 
 ### Login

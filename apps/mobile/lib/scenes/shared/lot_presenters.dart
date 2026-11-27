@@ -9,35 +9,35 @@ AceLotStatus aceLotStatusOf(LoteStatus s) => switch (s) {
       LoteStatus.semAcesso => AceLotStatus.semAcesso,
     };
 
+List<Offset> _offsets(List<Ponto> pts) =>
+    [for (final p in pts) Offset(p.x, p.y)];
+
 List<AceIsoLot> isoLotsOf(Quadra q) => [
       for (final l in q.lotes)
         AceIsoLot(
           id: l.id,
-          x: l.x,
-          y: l.y,
-          w: l.w,
-          d: l.d,
+          polygon: _offsets(l.poly),
           status: aceLotStatusOf(l.status),
-          label: '${l.numero}',
+          label: l.numero,
         ),
     ];
 
 List<AceIsoGroup> isoGroupsOf(Quadra q) => [
       for (final c in q.conjuntos)
-        AceIsoGroup(id: c.id, label: c.nome, x: c.x, y: c.y, w: c.w, h: c.h),
+        AceIsoGroup(
+          id: c.id,
+          label: c.nome,
+          bounds: Rect.fromLTRB(
+              c.limites.minX, c.limites.minY, c.limites.maxX, c.limites.maxY),
+        ),
     ];
 
 List<AceIsoArea> isoAreasOf(Quadra q) => [
       for (final a in q.areas)
         AceIsoArea(
           label: a.nome,
-          x: a.x,
-          y: a.y,
-          w: a.w,
-          h: a.h,
-          kind: a.nome.toLowerCase().contains('verde')
-              ? AceIsoAreaKind.park
-              : AceIsoAreaKind.building,
+          polygon: _offsets(a.poly),
+          kind: a.praca ? AceIsoAreaKind.park : AceIsoAreaKind.building,
         ),
     ];
 
@@ -46,9 +46,9 @@ Map<AceLotStatus, int> lotCountsOf(Iterable<Lote> lotes) => {
         s: lotes.where((l) => aceLotStatusOf(l.status) == s).length,
     };
 
-/// "Lote 7 · Alameda 3"
+/// "Lote 7 · QI 16 · Alameda 4"
 String loteTitulo(Quadra q, Lote l) =>
-    'Lote ${l.numero} · ${q.conjuntoDo(l).nome}';
+    'Lote ${l.numero} · ${q.conjuntoDo(l).titulo}';
 
 /// Lotes com visita registrada, a mais recente primeiro.
 List<Lote> lotesTrabalhados(Quadra q) =>
@@ -67,7 +67,8 @@ String visitaResumo(VisitaLote v) {
     if (a.animais > 0) _n(a.animais, 'animal', 'animais'),
     if (a.focos > 0) _n(a.focos, 'foco', 'focos'),
   ];
-  return [v.horario, if (partes.isEmpty) 'nada encontrado' else ...partes].join(' · ');
+  return [v.horario, if (partes.isEmpty) 'nada encontrado' else ...partes]
+      .join(' · ');
 }
 
 String _n(int n, String um, String varios) => '$n ${n == 1 ? um : varios}';

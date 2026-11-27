@@ -61,7 +61,8 @@ class HomeViewModel extends SceneViewModel {
   }
 
   /// Salva a visita do lote. Retorna `null` se deu certo, ou a mensagem de erro.
-  Future<String?> registrar(Lote lote, ResultadoVisita resultado, Achados achados) async {
+  Future<String?> registrar(
+      Lote lote, ResultadoVisita resultado, Achados achados) async {
     try {
       await _quadras.registrarVisita(
         quadraId: quadraId,

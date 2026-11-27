@@ -6,8 +6,10 @@ Login de teste: agente "123456" / "ace123" · supervisor "654321" / "sup123"
 """
 from __future__ import annotations
 
+import json
 import secrets
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import Depends, FastAPI, Header, Query, Request
@@ -294,13 +296,15 @@ def update_visit(visit_id: int, body: VisitUpdate, _=Depends(current_agent)):
 
 # ------------------------------------------------------------------ quadras
 #
-# Quadra 1106 Sul (ARSE 112, Palmas - TO), desenhada a partir da planta de
-# parcelamento da Prefeitura (março de 2015). Representação esquemática: cada
-# conjunto é uma fila dupla de lotes voltada para a sua alameda. Unidade = 1
-# testada de lote (~12 m); x cresce para leste, y para sul.
+# Quadra 1106 Sul (ARSE 112, Palmas - TO). A planta (data/quadra_1106.json) foi
+# extraída da planta de parcelamento da Prefeitura (PDF vetorial, março de 2015):
+# cada lote é o polígono fechado pelas linhas da camada LOTE do CAD, com o número
+# desenhado dentro dele, agrupado na sua Quadra Interna (QI/QC). Unidade: ponto do
+# PDF (~1 m); x cresce para leste, y para sul.
 
 LoteStatus = Literal["pendente", "visitado", "sem_acesso"]
 Resultado = Literal["visitado", "recusado"]
+Ponto = tuple[float, float]
 
 
 class VisitaLote(BaseModel):
@@ -315,31 +319,23 @@ class VisitaLote(BaseModel):
 
 class Lote(BaseModel):
     id: str
-    numero: int
-    x: float
-    y: float
-    w: float
-    d: float
+    numero: str = Field(description='Como está na planta: "7", "15-A"')
+    poly: list[Ponto] = Field(description="Contorno do lote")
     status: LoteStatus
     visita: Optional[VisitaLote] = None
 
 
 class Conjunto(BaseModel):
     id: str
-    nome: str
-    x: float
-    y: float
-    w: float
-    h: float
+    nome: str = Field(examples=["QI 16"])
+    alameda: Optional[str] = Field(None, examples=["Alameda 4"])
     lotes: list[Lote]
 
 
 class AreaLivre(BaseModel):
     nome: str
-    x: float
-    y: float
-    w: float
-    h: float
+    tipo: Literal["park", "building"]
+    poly: list[Ponto]
 
 
 class QuadraResumo(BaseModel):
@@ -367,88 +363,33 @@ class VisitaRequest(BaseModel):
     focos: int = Field(0, ge=0, le=999)
 
 
-# (alameda, x, y, lotes por fila, orientação: "h" = filas leste-oeste, "v" = norte-sul)
-_CONJUNTOS_1106 = [
-    # faixa oeste (Av. NS-4)
-    (1, 2, 3, 5, "h"), (3, 2, 9, 5, "h"), (5, 2, 15, 5, "h"), (7, 2, 21, 5, "h"),
-    (9, 2, 41, 5, "h"), (11, 2, 47, 5, "h"), (13, 2, 53, 5, "h"), (15, 2, 59, 5, "h"),
-    # miolo oeste
-    (2, 9, 3, 8, "v"), (4, 9, 13, 8, "v"), (10, 9, 41, 8, "v"), (12, 9, 51, 8, "v"),
-    # centro norte (Alamedas 33, 31, 29), dois conjuntos por alameda
-    (33, 15, 3, 8, "h"), (33, 25, 3, 8, "h"),
-    (31, 15, 9, 8, "h"), (31, 25, 9, 8, "h"),
-    (29, 15, 15, 8, "h"), (29, 25, 15, 8, "h"),
-    # centro sul (Alamedas 25, 23, 21)
-    (25, 15, 41, 8, "h"), (25, 25, 41, 8, "h"),
-    (23, 15, 47, 8, "h"), (23, 25, 47, 8, "h"),
-    (21, 15, 53, 8, "h"), (21, 25, 53, 8, "h"),
-    # miolo leste
-    (34, 35, 3, 8, "v"), (36, 35, 13, 8, "v"), (42, 35, 41, 8, "v"), (44, 35, 51, 8, "v"),
-    # faixa leste (Av. NS-10)
-    (35, 41, 3, 5, "h"), (37, 41, 9, 5, "h"), (39, 41, 15, 5, "h"), (41, 41, 21, 5, "h"),
-    (43, 41, 41, 5, "h"), (45, 41, 47, 5, "h"), (47, 41, 53, 5, "h"), (49, 41, 59, 5, "h"),
-]
-_PARTIDAS = {21, 23, 25, 29, 31, 33}  # alamedas com dois conjuntos (oeste e leste)
-_AREAS_1106 = [
-    {"nome": "Área verde · esporte e lazer", "x": 15, "y": 23, "w": 18, "h": 14},
-    {"nome": "Escola municipal", "x": 2, "y": 28, "w": 11, "h": 9},
-    {"nome": "Paróquia São José", "x": 35, "y": 28, "w": 11, "h": 9},
-]
-_QUADRA_LARGURA, _QUADRA_ALTURA = 48, 65
+_PLANTA_1106 = Path(__file__).parent / "data" / "quadra_1106.json"
 
-
-def _lote_id(alameda: int, numero: int) -> str:
-    return f"AL{alameda:02d}-L{numero:02d}"
+# visitas já feitas no começo do dia (demonstração)
+_SEED_LOTES = {
+    "QI01-L01": ("visitado", "07:40", 2, 0, 1, 0),
+    "QI01-L02": ("visitado", "07:52", 0, 0, 0, 0),
+    "QI01-L03": ("recusado", "08:01", 0, 0, 0, 0),
+    "QI01-L04": ("visitado", "08:10", 3, 12, 2, 1),
+    "QI01-L06": ("visitado", "08:24", 1, 0, 0, 0),
+    "QI01-L07": ("recusado", "08:31", 0, 0, 0, 0),
+    "QI02-L01": ("visitado", "08:45", 0, 0, 1, 0),
+    "QI02-L02": ("visitado", "08:58", 4, 30, 0, 2),
+}
 
 
 def _build_1106() -> dict:
-    conjuntos, next_num = [], {}
-    for alameda, x0, y0, n, orient in _CONJUNTOS_1106:
-        start = next_num.get(alameda, 1)
-        lotes = []
-        for fila in range(2):
-            for i in range(n):
-                num = start + fila * n + i
-                if orient == "h":
-                    geo = {"x": x0 + i, "y": y0 + fila * 2, "w": 1, "d": 2}
-                else:
-                    geo = {"x": x0 + fila * 2, "y": y0 + i, "w": 2, "d": 1}
-                lotes.append({
-                    "id": _lote_id(alameda, num), "numero": num, **geo,
-                    "status": "pendente", "visita": None,
-                })
-        next_num[alameda] = start + 2 * n
-        w, h = (n, 4) if orient == "h" else (4, n)
-        lado = ""
-        if alameda in _PARTIDAS:
-            lado = " · oeste" if x0 < 20 else " · leste"
-        conjuntos.append({
-            "id": f"AL{alameda:02d}-{x0:02d}{y0:02d}",
-            "nome": f"Alameda {alameda}{lado}",
-            "x": x0, "y": y0, "w": w, "h": h, "lotes": lotes,
-        })
+    planta = json.loads(_PLANTA_1106.read_text(encoding="utf-8"))
+    for c in planta["conjuntos"]:
+        for lote in c["lotes"]:
+            lote["status"] = "pendente"
+            lote["visita"] = None
     return {
         "id": "1106",
         "nome": "Quadra 1106 Sul",
         "bairro": "ARSE 112 · Palmas - TO",
-        "largura": _QUADRA_LARGURA,
-        "altura": _QUADRA_ALTURA,
-        "areas": _AREAS_1106,
-        "conjuntos": conjuntos,
+        **planta,
     }
-
-
-# visitas já feitas no começo do dia (demonstração)
-_SEED_LOTES = {
-    "AL01-L01": ("visitado", "07:40", 2, 0, 1, 0),
-    "AL01-L02": ("visitado", "07:52", 0, 0, 0, 0),
-    "AL01-L03": ("recusado", "08:01", 0, 0, 0, 0),
-    "AL01-L04": ("visitado", "08:10", 3, 12, 2, 1),
-    "AL01-L06": ("visitado", "08:24", 1, 0, 0, 0),
-    "AL01-L07": ("recusado", "08:31", 0, 0, 0, 0),
-    "AL03-L01": ("visitado", "08:45", 0, 0, 1, 0),
-    "AL03-L02": ("visitado", "08:58", 4, 30, 0, 2),
-}
 
 
 def _apply_visit(lote, resultado, horario, agente, cri=0, lar=0, ani=0, foc=0):
